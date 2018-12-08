@@ -55,6 +55,7 @@
 
 #include "modules/common/macro.h"
 #include "modules/perception/lib/base/registerer.h"
+#include "modules/perception/obstacle/base/object_supplement.h"
 #include "modules/perception/obstacle/camera/lane_post_process/common/type.h"
 
 namespace apollo {
@@ -62,6 +63,10 @@ namespace perception {
 
 struct CameraLanePostProcessOptions {
   double timestamp;
+  bool use_lane_history = false;
+  int lane_history_size = 0;
+  VehicleStatus vehicle_status;
+  void SetMotion(const VehicleStatus& vs) { vehicle_status = vs; }
 };
 
 class BaseCameraLanePostProcessor {
@@ -78,11 +83,15 @@ class BaseCameraLanePostProcessor {
   // @param [out]: lane objects
   virtual bool Process(const cv::Mat& lane_map,
                        const CameraLanePostProcessOptions& options,
-                       apollo::perception::LaneObjectsPtr lane_instances) = 0;
+                       LaneObjectsPtr lane_instances) = 0;
   */
   virtual bool Process(const cv::Mat& lane_map,
                        const CameraLanePostProcessOptions& options,
-                       apollo::perception::LaneObjectsPtr lane_instances) = 0;
+                       LaneObjectsPtr* lane_instances) = 0;
+
+  virtual bool ProcessWithoutCC(const cv::Mat& lane_map,
+                       const CameraLanePostProcessOptions& options,
+                       LaneObjectsPtr* lane_instances) = 0;
 
   virtual std::string name() const = 0;
 

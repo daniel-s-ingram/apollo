@@ -23,9 +23,12 @@ export default [
             perceptionUnknownMovable: 'Unknown Movable',
             perceptionUnknownUnmovable: 'Unknown Stationary',
             perceptionUnknown: 'Unknown',
+            perceptionCipv: 'Closest In-Path Vehicle',
             perceptionVelocity: 'Velocity',
             perceptionHeading: 'Heading',
-            perceptionId: 'Id'
+            perceptionId: 'Id',
+            perceptionObstacleInfo: 'Distance and Speed',
+            perceptionLaneMarker: 'Lane Marker',
         },
         supportInOfflineView: true,
     }, {
@@ -74,7 +77,7 @@ export default [
             positionLocalization: 'Localization',
             positionGps: 'GPS',
         },
-        supportInOfflineView: false,
+        supportInOfflineView: true,
     }, {
         id: 'map',
         title: 'Map',

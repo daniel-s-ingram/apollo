@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  *****************************************************************************/
+
 #include "modules/perception/obstacle/camera/detector/yolo_camera_detector/yolo_camera_detector.h"
 
 #include <string>
@@ -22,10 +23,10 @@
 #include "gtest/gtest.h"
 #include "opencv2/opencv.hpp"
 
-#include "include/region_output.h"
 #include "modules/common/log.h"
 #include "modules/common/util/file.h"
 #include "modules/perception/common/perception_gflags.h"
+#include "modules/perception/cuda_util/region_output.h"
 #include "modules/perception/obstacle/camera/detector/common/feature_extractor.h"
 #include "modules/perception/obstacle/camera/detector/yolo_camera_detector/proto/yolo.pb.h"
 #include "modules/perception/obstacle/camera/detector/yolo_camera_detector/util.h"
@@ -47,7 +48,6 @@ using apollo::perception::obstacle::yolo::YoloParam;
 class YoloCameraDetectorTest : public ::testing::Test {
  protected:
   void SetUp() override {
-    FLAGS_config_manager_path = FLAGS_test_dir + "config_manager.config",
     FLAGS_yolo_config_filename = "config.pt";
     RegisterFactoryYoloCameraDetector();
   }
@@ -78,7 +78,7 @@ TEST_F(YoloCameraDetectorTest, yolo_camera_detector_roipooling_test) {
   CHECK_EQ(camera_detector->Name(), "YoloCameraDetector");
 
   const std::string image_file = FLAGS_test_dir + "test.jpg";
-  AINFO << "test image file: " << image_file;
+  ADEBUG << "test image file: " << image_file;
 
   cv::Mat frame = cv::imread(image_file, CV_LOAD_IMAGE_COLOR);
   CHECK_NOTNULL(frame.data);
@@ -86,16 +86,16 @@ TEST_F(YoloCameraDetectorTest, yolo_camera_detector_roipooling_test) {
   CameraDetectorOptions options;
   CHECK_EQ(camera_detector->Detect(frame, options, NULL), false);
 
-  std::vector<VisualObjectPtr> objects;
+  std::vector<std::shared_ptr<VisualObject>> objects;
   CHECK(camera_detector->Detect(frame, options, &objects));
-  AINFO << "#objects detected = " << objects.size();
+  ADEBUG << "#objects detected = " << objects.size();
 
-  CHECK_EQ(objects.size(), 3);
+  CHECK_EQ(objects.size(), 1);  // Related to current model and threshold
 
   int obj_idx = 0;
   for (const auto &obj : objects) {
-    AINFO << "Obj-" << obj_idx++ << ": " << GetObjectName(obj->type)
-          << " (feat: " << obj->object_feature.size() << "-D)";
+    ADEBUG << "Obj-" << obj_idx++ << ": " << GetObjectName(obj->type)
+           << " (feat: " << obj->object_feature.size() << "-D)";
     if (obj->object_feature.size() > 0) {
       float sum_of_squares = 0.0;
       for (const auto &f : obj->object_feature) {
@@ -112,7 +112,7 @@ TEST_F(YoloCameraDetectorTest, multi_task_test) {
   CHECK_EQ(camera_detector->Name(), "YoloCameraDetector");
 
   const std::string image_file = FLAGS_test_dir + "test.jpg";
-  AINFO << "test image file: " << image_file;
+  ADEBUG << "test image file: " << image_file;
 
   cv::Mat frame = cv::imread(image_file, CV_LOAD_IMAGE_COLOR);
   CHECK_NOTNULL(frame.data);
@@ -120,16 +120,15 @@ TEST_F(YoloCameraDetectorTest, multi_task_test) {
   CameraDetectorOptions options;
   CHECK_EQ(camera_detector->Multitask(frame, options, NULL, NULL), false);
 
-  std::vector<VisualObjectPtr> objects;
+  std::vector<std::shared_ptr<VisualObject>> objects;
   cv::Mat lane_map(frame.rows, frame.cols, CV_32FC1);
   CHECK(camera_detector->Multitask(frame, options, &objects, &lane_map));
-  AINFO << "#objects detected = " << objects.size();
+  ADEBUG << "#objects detected = " << objects.size();
 
-  CHECK_EQ(objects.size(), 3);
+  CHECK_EQ(objects.size(), 1);  // Related to current model and threshold
 
   const std::string lane_map_result_file = FLAGS_test_dir + "lane_map.jpg";
   lane_map.convertTo(lane_map, CV_8UC3, 255.0f);
-  cv::imwrite("result.jpg", lane_map);
   cv::imwrite(lane_map_result_file, lane_map);
 }
 

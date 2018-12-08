@@ -12,7 +12,7 @@ cc_library(
     ],
     deps = [
         "//modules/common/proto:pnc_point_proto",
-        "//modules/planning/common:planning_util",
+        "//modules/planning/common:planning_context",
     ],
 )
 
@@ -40,7 +40,19 @@ cc_library(
     deps = [
         "//modules/common/math:linear_interpolation",
         "//modules/common/proto:pnc_point_proto",
-        "//modules/planning/common:planning_util",
+        "//modules/planning/common:planning_context",
+    ],
+)
+
+cc_test(
+    name = "frenet_frame_path_test",
+    size = "small",
+    srcs = [
+        "frenet_frame_path_test.cc",
+    ],
+    deps = [
+        ":frenet_frame_path",
+        "@gtest//:main",
     ],
 )
 

@@ -42,22 +42,25 @@ export default class ControlData {
             },
             stationErrorGraph: {
                 error: [],
-            }
+            },
+            headingErrorGraph: {
+                error: [],
+            },
+            lateralErrorGraph: {
+                error: [],
+            },
         };
     }
 
-    updateStationErrorGraph(controlData) {
-        if (!controlData.stationError) {
+    updateErrorGraph(graph, currentTimestamp, error) {
+        if (!error || !currentTimestamp || !graph) {
             return;
         }
 
-        const graph = this.data.stationErrorGraph;
-        const currentTimestamp = controlData.timestampSec;
-
         // clean up data if needed
         const removeAllPoints = graph.error.length > 0 &&
-              currentTimestamp < graph.error[graph.error.length - 1].x;
-        const removeOldestPoint = (graph.length >= MAX_HISTORY_POINTS);
+            currentTimestamp < graph.error[graph.error.length - 1].x;
+        const removeOldestPoint = (graph.error.length >= MAX_HISTORY_POINTS);
         if (removeAllPoints) {
             graph.error = [];
         } else if (removeOldestPoint) {
@@ -68,7 +71,7 @@ export default class ControlData {
         const hasNewData = graph.error.length === 0 ||
             currentTimestamp !== graph.error[graph.error.length - 1].x;
         if (hasNewData) {
-            graph.error.push({x: currentTimestamp, y: controlData.stationError});
+            graph.error.push({ x: currentTimestamp, y: error });
         }
     }
 
@@ -131,7 +134,7 @@ export default class ControlData {
         }
     }
 
-    updateGraph(graph, trajectory, adc, xFieldName, yFieldName) {
+    updateAdcStatusGraph(graph, trajectory, adc, xFieldName, yFieldName) {
         const currentTimestamp = adc.timestampSec;
 
         // clean up data if needed
@@ -181,25 +184,28 @@ export default class ControlData {
         const trajectory = world.planningTrajectory;
         const adc = world.autoDrivingCar;
         if (trajectory && adc) {
-            this.updateGraph(this.data.speedGraph,
+            this.updateAdcStatusGraph(this.data.speedGraph,
                 trajectory, adc, 'timestampSec', 'speed');
-            this.updateGraph(this.data.accelerationGraph,
+            this.updateAdcStatusGraph(this.data.accelerationGraph,
                 trajectory, adc, 'timestampSec', 'speedAcceleration');
-            this.updateGraph(this.data.curvatureGraph,
+            this.updateAdcStatusGraph(this.data.curvatureGraph,
                 trajectory, adc, 'timestampSec', 'kappa');
 
-            this.updateGraph(this.data.trajectoryGraph,
+            this.updateAdcStatusGraph(this.data.trajectoryGraph,
                 trajectory, adc, 'positionX', 'positionY');
             this.updateSteerCurve(this.data.trajectoryGraph, adc, vehicleParam);
             this.data.trajectoryGraph.pose[0].x = adc.positionX;
             this.data.trajectoryGraph.pose[0].y = adc.positionY;
             this.data.trajectoryGraph.pose[0].rotation = adc.heading;
-
-            this.updateTime(world.planningTime);
         }
 
         if (world.controlData) {
-            this.updateStationErrorGraph(world.controlData);
+            const control = world.controlData;
+            const timestamp = control.timestampSec;
+            this.updateErrorGraph(this.data.stationErrorGraph, timestamp, control.stationError);
+            this.updateErrorGraph(this.data.lateralErrorGraph, timestamp, control.lateralError);
+            this.updateErrorGraph(this.data.headingErrorGraph, timestamp, control.headingError);
+            this.updateTime(timestamp);
         }
     }
 }

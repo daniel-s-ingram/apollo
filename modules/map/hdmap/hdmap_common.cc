@@ -128,9 +128,7 @@ PointENU PointFromVec2d(const Vec2d &point) {
 
 }  // namespace
 
-LaneInfo::LaneInfo(const Lane &lane) : lane_(lane) {
-  Init();
-}
+LaneInfo::LaneInfo(const Lane &lane) : lane_(lane) { Init(); }
 
 void LaneInfo::Init() {
   PointsFromCurve(lane_.central_curve(), &points_);
@@ -237,6 +235,36 @@ double LaneInfo::Heading(const double s) const {
   } else {
     return common::math::slerp(headings_[index - 1], accumulated_s_[index - 1],
                                headings_[index], accumulated_s_[index], s);
+  }
+}
+
+double LaneInfo::Curvature(const double s) const {
+  if (points_.size() < 2) {
+    AERROR << "Not enough points to compute curvature.";
+    return 0.0;
+  }
+  const double kEpsilon = 0.001;
+  if (s + kEpsilon < accumulated_s_.front()) {
+    AERROR << "s:" << s << " should be >= " << accumulated_s_.front();
+    return 0.0;
+  }
+  if (s > accumulated_s_.back() + kEpsilon) {
+    AERROR << "s:" << s << " should be <= " << accumulated_s_.back();
+    return 0.0;
+  }
+
+  auto iter = std::lower_bound(accumulated_s_.begin(), accumulated_s_.end(), s);
+  if (iter == accumulated_s_.end()) {
+    ADEBUG << "Reach the end of lane.";
+    return 0.0;
+  }
+  int index = std::distance(accumulated_s_.begin(), iter);
+  if (index == 0) {
+    ADEBUG << "Reach the beginning of lane";
+    return 0.0;
+  } else {
+    return (headings_[index] - headings_[index - 1]) /
+           (accumulated_s_[index] - accumulated_s_[index - 1] + kEpsilon);
   }
 }
 
@@ -398,46 +426,39 @@ bool LaneInfo::GetProjection(const Vec2d &point, double *accumulate_s,
   if (segments_.empty()) {
     return false;
   }
-  double min_distance = std::numeric_limits<double>::infinity();
-  std::size_t min_index = 0;
-  double min_proj = 0.0;
-  std::size_t num_segments = segments_.size();
-  for (std::size_t i = 0; i < num_segments; ++i) {
-    const auto &segment = segments_[i];
-    const double distance = segment.DistanceTo(point);
-    if (distance < min_distance) {
-      const double proj = segment.ProjectOntoUnit(point);
-      if (proj < 0.0 && i > 0) {
-        continue;
-      }
-      if (proj > segment.length() && i + 1 < num_segments) {
-        const auto &next_segment = segments_[i + 1];
-        if ((point - next_segment.start())
-                .InnerProd(next_segment.unit_direction()) >= 0.0) {
-          continue;
-        }
-      }
-      min_distance = distance;
+  double min_dist = std::numeric_limits<double>::infinity();
+  int seg_num = segments_.size();
+  int min_index = 0;
+  for (int i = 0; i < seg_num; ++i) {
+    const double distance = segments_[i].DistanceSquareTo(point);
+    if (distance < min_dist) {
       min_index = i;
-      min_proj = proj;
+      min_dist = distance;
     }
   }
-
-  const auto &segment = segments_[min_index];
-  if (min_index + 1 >= num_segments) {
-    *accumulate_s = accumulated_s_[min_index] + min_proj;
+  min_dist = std::sqrt(min_dist);
+  const auto &nearest_seg = segments_[min_index];
+  const auto prod = nearest_seg.ProductOntoUnit(point);
+  const auto proj = nearest_seg.ProjectOntoUnit(point);
+  if (min_index == 0) {
+    *accumulate_s = std::min(proj, nearest_seg.length());
+    if (proj < 0) {
+      *lateral = prod;
+    } else {
+      *lateral = (prod > 0.0 ? 1 : -1) * min_dist;
+    }
+  } else if (min_index == seg_num - 1) {
+    *accumulate_s = accumulated_s_[min_index] + std::max(0.0, proj);
+    if (proj > 0) {
+      *lateral = prod;
+    } else {
+      *lateral = (prod > 0.0 ? 1 : -1) * min_dist;
+    }
   } else {
-    *accumulate_s =
-        accumulated_s_[min_index] + std::min(min_proj, segment.length());
+    *accumulate_s = accumulated_s_[min_index] +
+                    std::max(0.0, std::min(proj, nearest_seg.length()));
+    *lateral = (prod > 0.0 ? 1 : -1) * min_dist;
   }
-  const double prod = segment.ProductOntoUnit(point);
-  if ((min_index == 0 && min_proj < 0.0) ||
-      (min_index + 1 == num_segments && min_proj > segment.length())) {
-    *lateral = prod;
-  } else {
-    *lateral = (prod > 0.0 ? min_distance : -min_distance);
-  }
-
   return true;
 }
 
@@ -545,9 +566,7 @@ void JunctionInfo::UpdateOverlaps(const HDMapImpl &map_instance) {
   }
 }
 
-SignalInfo::SignalInfo(const Signal &signal) : signal_(signal) {
-  Init();
-}
+SignalInfo::SignalInfo(const Signal &signal) : signal_(signal) { Init(); }
 
 void SignalInfo::Init() {
   for (const auto &stop_line : signal_.stop_line()) {
@@ -671,6 +690,16 @@ RoadInfo::RoadInfo(const Road &road) : road_(road) {
 
 const std::vector<RoadBoundary> &RoadInfo::GetBoundaries() const {
   return road_boundaries_;
+}
+
+ParkingSpaceInfo::ParkingSpaceInfo(const ParkingSpace &parking_space)
+    : parking_space_(parking_space) {
+  Init();
+}
+
+void ParkingSpaceInfo::Init() {
+  polygon_ = ConvertToPolygon2d(parking_space_.polygon());
+  CHECK_GT(polygon_.num_points(), 2);
 }
 
 }  // namespace hdmap

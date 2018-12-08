@@ -56,6 +56,8 @@ class WebSocketHandler : public CivetWebSocketHandler {
   using MessageHandler = std::function<void(const Json &, Connection *)>;
   using ConnectionReadyHandler = std::function<void(Connection *)>;
 
+  explicit WebSocketHandler(const std::string &name) : name_(name) {}
+
   /**
    * @brief Callback method for when the client intends to establish a websocket
    * connection, before websocket handshake.
@@ -149,6 +151,8 @@ class WebSocketHandler : public CivetWebSocketHandler {
   }
 
  private:
+  const std::string name_;
+
   // Message handlers keyed by message type.
   std::unordered_map<std::string, MessageHandler> message_handlers_;
   // New connection ready handlers.
@@ -157,10 +161,12 @@ class WebSocketHandler : public CivetWebSocketHandler {
   // The mutex guarding the connection set. We are not using read
   // write lock, as the server is not expected to get many clients
   // (connections).
+  // CAVEAT: Execution section while holding this global lock should be as
+  // brief as possible.
   mutable std::mutex mutex_;
 
   // The pool of all maintained connections. Each connection has a lock to
-  // against simultaneous write.
+  // guard against simultaneous write.
   std::unordered_map<Connection *, std::shared_ptr<std::mutex>> connections_;
 };
 

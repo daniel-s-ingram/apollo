@@ -21,6 +21,7 @@
 #include "modules/common/math/math_utils.h"
 #include "modules/prediction/common/feature_output.h"
 #include "modules/prediction/common/prediction_gflags.h"
+#include "modules/prediction/container/obstacles/obstacle_clusters.h"
 
 namespace apollo {
 namespace prediction {
@@ -42,9 +43,6 @@ void ObstaclesContainer::Insert(const ::google::protobuf::Message& message) {
     timestamp = perception_obstacles.header().timestamp_sec();
   }
   if (std::fabs(timestamp - timestamp_) > FLAGS_replay_timestamp_gap) {
-    if (FLAGS_prediction_offline_mode) {
-      FeatureOutput::Write();
-    }
     obstacles_.Clear();
     ADEBUG << "Replay mode is enabled.";
   } else if (timestamp <= timestamp_) {
@@ -53,9 +51,16 @@ void ObstaclesContainer::Insert(const ::google::protobuf::Message& message) {
     return;
   }
 
+  if (FLAGS_prediction_offline_mode) {
+    if (std::fabs(timestamp - timestamp_) > FLAGS_replay_timestamp_gap ||
+        FeatureOutput::Size() > FLAGS_max_num_dump_feature) {
+      FeatureOutput::Write();
+    }
+  }
+
   timestamp_ = timestamp;
   ADEBUG << "Current timestamp is [" << timestamp_ << "]";
-  clusters_.Init();
+  ObstacleClusters::Init();
   for (const PerceptionObstacle& perception_obstacle :
        perception_obstacles.perception_obstacle()) {
     ADEBUG << "Perception obstacle [" << perception_obstacle.id() << "] "
@@ -88,10 +93,10 @@ void ObstaclesContainer::InsertPerceptionObstacle(
   }
   Obstacle* obstacle_ptr = obstacles_.GetSilently(id);
   if (obstacle_ptr != nullptr) {
-    obstacle_ptr->Insert(perception_obstacle, timestamp, &clusters_);
+    obstacle_ptr->Insert(perception_obstacle, timestamp);
   } else {
     Obstacle obstacle;
-    obstacle.Insert(perception_obstacle, timestamp, &clusters_);
+    obstacle.Insert(perception_obstacle, timestamp);
     obstacles_.Put(id, std::move(obstacle));
   }
 }

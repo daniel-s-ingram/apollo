@@ -28,9 +28,9 @@
 #include "modules/common/util/util.h"
 #include "modules/map/pnc_map/path.h"
 #include "modules/planning/common/planning_gflags.h"
-#include "modules/planning/reference_line/qp_spline_reference_line_smoother.h"
 #include "modules/planning/reference_line/reference_line.h"
 #include "modules/planning/reference_line/reference_line_smoother.h"
+#include "modules/planning/reference_line/qp_spline_reference_line_smoother.h"
 
 DEFINE_string(input_file, "", "input file with format x,y per line");
 DEFINE_string(output_file, "", "output file with format x,y per line");
@@ -46,8 +46,7 @@ using hdmap::MapPathPoint;
 
 class SmootherUtil {
  public:
-  explicit SmootherUtil(const std::string& filename) {
-    filename_ = filename;
+  explicit SmootherUtil(const std::string& filename) : filename_(filename) {
     std::ifstream ifs(filename.c_str(), std::ifstream::in);
     std::string point_str;
     while (std::getline(ifs, point_str)) {
@@ -77,12 +76,14 @@ class SmootherUtil {
       for (; s < FLAGS_smooth_length && i < raw_points_.size(); ++i) {
         LineSegment2d segment(raw_points_[i - 1], raw_points_[i]);
         ref_points.emplace_back(MapPathPoint(raw_points_[i], segment.heading()),
-                                0.0, 0.0, 0.0, 0.0);
+                                0.0, 0.0);
         s += segment.length();
       }
       ReferenceLine init_ref(ref_points);
-      std::unique_ptr<ReferenceLineSmoother> smoother_ptr(
-          new QpSplineReferenceLineSmoother(config_));
+      // Prefer "std::make_unique" to direct use of "new".
+      // Reference "https://herbsutter.com/gotw/_102/" for details.
+      auto smoother_ptr =
+          std::make_unique<QpSplineReferenceLineSmoother>(config_);
       auto anchors =
           CreateAnchorPoints(init_ref.reference_points().front(), init_ref);
       smoother_ptr->SetAnchorPoints(anchors);
@@ -105,8 +106,8 @@ class SmootherUtil {
       common::SLPoint sl;
       prev_half_ref.XYToSL(raw_points_[i], &sl);
       while (sl.s() <= prev_half_ref.Length() && i + 1 < raw_points_.size()) {
+        prev_half_ref.XYToSL(raw_points_[i + 1], &sl);
         ++i;
-        prev_half_ref.XYToSL(raw_points_[i], &sl);
       }
       s = 0.0;
       j = i;
@@ -115,14 +116,16 @@ class SmootherUtil {
         Vec2d vec = raw_points_[j + 1] - raw_points_[j];
         s += vec.Length();
         ref_points.emplace_back(MapPathPoint(raw_points_[j], vec.Angle()), 0.0,
-                                0.0, 0.0, 0.0);
+                                0.0);
         ++j;
       }
       i = j;
       ReferenceLine local_ref(ref_points);
       auto anchors = CreateAnchorPoints(ref_points.front(), local_ref);
-      std::unique_ptr<ReferenceLineSmoother> smoother_ptr(
-          new QpSplineReferenceLineSmoother(config_));
+      // Prefer "std::make_unique" to direct use of "new".
+      // Reference "https://herbsutter.com/gotw/_102/" for details.
+      auto smoother_ptr =
+          std::make_unique<QpSplineReferenceLineSmoother>(config_);
       smoother_ptr->SetAnchorPoints(anchors);
       ReferenceLine smoothed_local_ref;
       if (!smoother_ptr->Smooth(local_ref, &smoothed_local_ref)) {
@@ -138,6 +141,10 @@ class SmootherUtil {
 
   void Export(const std::string& filename) {
     std::ofstream ofs(filename.c_str());
+    if (ofs.fail()) {
+      AERROR << "Fail to open file " << filename;
+      return;
+    }
     ofs.precision(6);
     double s = 0.0;
     // skip the first point and the last point

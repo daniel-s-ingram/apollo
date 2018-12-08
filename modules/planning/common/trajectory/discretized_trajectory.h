@@ -43,9 +43,10 @@ class DiscretizedTrajectory : public Trajectory {
   explicit DiscretizedTrajectory(
       const std::vector<common::TrajectoryPoint>& trajectory_points);
 
-  virtual ~DiscretizedTrajectory() = default;
+  void SetTrajectoryPoints(
+      const std::vector<common::TrajectoryPoint>& trajectory_points);
 
-  common::TrajectoryPoint Evaluate(const double relative_time) const override;
+  virtual ~DiscretizedTrajectory() = default;
 
   common::TrajectoryPoint StartPoint() const override;
 
@@ -53,10 +54,9 @@ class DiscretizedTrajectory : public Trajectory {
 
   double GetSpatialLength() const override;
 
-  virtual common::TrajectoryPoint EvaluateUsingLinearApproximation(
-      const double relative_time) const;
+  common::TrajectoryPoint Evaluate(const double relative_time) const override;
 
-  virtual uint32_t QueryNearestPoint(const double relative_time) const;
+  virtual uint32_t QueryLowerBoundPoint(const double relative_time) const;
 
   virtual uint32_t QueryNearestPoint(const common::math::Vec2d& position) const;
 
@@ -78,12 +78,34 @@ class DiscretizedTrajectory : public Trajectory {
   uint32_t NumOfPoints() const;
 
   const std::vector<common::TrajectoryPoint>& trajectory_points() const;
+  std::vector<common::TrajectoryPoint>& trajectory_points();
 
   virtual void Clear();
 
  protected:
   std::vector<common::TrajectoryPoint> trajectory_points_;
 };
+
+inline std::uint32_t DiscretizedTrajectory::NumOfPoints() const {
+  return trajectory_points_.size();
+}
+
+inline const std::vector<common::TrajectoryPoint>&
+DiscretizedTrajectory::trajectory_points() const {
+  return trajectory_points_;
+}
+
+inline std::vector<common::TrajectoryPoint>&
+DiscretizedTrajectory::trajectory_points() {
+  return trajectory_points_;
+}
+
+inline void DiscretizedTrajectory::SetTrajectoryPoints(
+    const std::vector<common::TrajectoryPoint>& trajectory_points) {
+  trajectory_points_ = trajectory_points;
+}
+
+inline void DiscretizedTrajectory::Clear() { trajectory_points_.clear(); }
 
 }  // namespace planning
 }  // namespace apollo

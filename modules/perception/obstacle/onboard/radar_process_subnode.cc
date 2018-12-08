@@ -16,9 +16,9 @@
 
 #include "modules/perception/obstacle/onboard/radar_process_subnode.h"
 
-#include <map>
+#include <algorithm>
 #include <string>
-
+#include <unordered_map>
 #include "Eigen/Core"
 #include "eigen_conversions/eigen_msg.h"
 #include "pcl_conversions/pcl_conversions.h"
@@ -27,9 +27,8 @@
 #include "modules/common/adapters/adapter_manager.h"
 #include "modules/common/log.h"
 #include "modules/common/time/time_util.h"
-#include "modules/perception/common/perception_gflags.h"
 #include "modules/common/time/timer.h"
-#include "modules/perception/lib/config_manager/config_manager.h"
+#include "modules/perception/common/perception_gflags.h"
 #include "modules/perception/lib/config_manager/calibration_config_manager.h"
 #include "modules/perception/obstacle/base/object.h"
 #include "modules/perception/obstacle/radar/dummy/dummy_algorithms.h"
@@ -40,12 +39,12 @@ namespace apollo {
 namespace perception {
 
 using apollo::common::adapter::AdapterManager;
+using Eigen::Affine3d;
+using Eigen::Matrix4d;
 using pcl_util::Point;
 using pcl_util::PointD;
-using Eigen::Matrix4d;
-using Eigen::Affine3d;
 using std::string;
-using std::map;
+using std::unordered_map;
 
 bool RadarProcessSubnode::InitInternal() {
   if (inited_) {
@@ -64,7 +63,7 @@ bool RadarProcessSubnode::InitInternal() {
     return false;
   }
   // parse reserve fileds
-  map<string, string> reserve_field_map;
+  unordered_map<string, string> reserve_field_map;
   if (!SubnodeHelper::ParseReserveField(reserve_, &reserve_field_map)) {
     AERROR << "Failed to parse reserve filed: " << reserve_;
     return false;
@@ -114,9 +113,10 @@ void RadarProcessSubnode::OnRadar(const ContiRadar &radar_obs) {
   double unix_timestamp = timestamp;
   const double cur_time = common::time::Clock::NowInSeconds();
   const double start_latency = (cur_time - unix_timestamp) * 1e3;
-  AINFO << "FRAME_STATISTICS:Radar:Start:msg_time[" << GLOG_TIMESTAMP(timestamp)
-        << "]:cur_time[" << GLOG_TIMESTAMP(cur_time) << "]:cur_latency["
-        << start_latency << "]";
+  ADEBUG << "FRAME_STATISTICS: Radar:Start:msg_time["
+         << GLOG_TIMESTAMP(timestamp) << "]:cur_time["
+         << GLOG_TIMESTAMP(cur_time) << "]:cur_latency[" << start_latency
+         << "]";
   // 0. correct radar timestamp
   timestamp -= 0.07;
   auto *header = radar_obs_proto.mutable_header();
@@ -135,8 +135,11 @@ void RadarProcessSubnode::OnRadar(const ContiRadar &radar_obs) {
 
   // 1. get radar pose
   std::shared_ptr<Matrix4d> velodyne2world_pose = std::make_shared<Matrix4d>();
-  if (!GetVelodyneTrans(timestamp, velodyne2world_pose.get())
-      && !FLAGS_use_navigation_mode) {
+
+  ADEBUG << "use navigation mode " << FLAGS_use_navigation_mode;
+
+  if (!FLAGS_use_navigation_mode &&
+      !GetVelodyneTrans(timestamp, velodyne2world_pose.get())) {
     AERROR << "Failed to get trans at timestamp: " << GLOG_TIMESTAMP(timestamp);
     error_code_ = common::PERCEPTION_ERROR_TF;
     return;
@@ -145,51 +148,49 @@ void RadarProcessSubnode::OnRadar(const ContiRadar &radar_obs) {
   std::shared_ptr<Matrix4d> radar2car_pose = std::make_shared<Matrix4d>();
 
   if (!FLAGS_use_navigation_mode) {
-     *radar2world_pose =
-       *velodyne2world_pose * short_camera_extrinsic_ * radar_extrinsic_;
-     AINFO << "get radar trans pose succ. pose: \n" << *radar2world_pose;
+    *radar2world_pose =
+        *velodyne2world_pose * short_camera_extrinsic_ * radar_extrinsic_;
+    ADEBUG << "get radar trans pose succ. pose: \n" << *radar2world_pose;
 
   } else {
     CalibrationConfigManager *config_manager =
-     Singleton<CalibrationConfigManager>::get();
+        Singleton<CalibrationConfigManager>::get();
     CameraCalibrationPtr calibrator = config_manager->get_camera_calibration();
-    Eigen::Matrix4d camera_to_car = calibrator->get_camera_extrinsics();
-    *radar2car_pose = camera_to_car * radar_extrinsic_;
-    AINFO << "get radar trans pose succ. pose: \n" << *radar2car_pose;
+    // Eigen::Matrix4d camera_to_car = calibrator->get_camera_extrinsics();
+    *radar2car_pose = radar_extrinsic_;
+    ADEBUG << "get radar trans pose succ. pose: \n" << *radar2car_pose;
   }
 
   std::vector<PolygonDType> map_polygons;
   RadarDetectorOptions options;
   // Current Localiztion, radar postion.
   if (!FLAGS_use_navigation_mode) {
-      PointD position;
-      position.x = (*radar2world_pose)(0, 3);
-      position.y = (*radar2world_pose)(1, 3);
-      position.z = (*radar2world_pose)(2, 3);
-      // 2. Get map polygons.
-      HdmapStructPtr hdmap(new HdmapStruct);
-      if (FLAGS_enable_hdmap_input && hdmap_input_ &&
-          !hdmap_input_->GetROI(position,
-           FLAGS_front_radar_forward_distance, &hdmap)) {
-          AWARN << "Failed to get roi. timestamp: " <<
-            GLOG_TIMESTAMP(timestamp) << " position: ["
-            << position.x << ", " << position.y << ", "
-              << position.z << "]";
-            // NOTE: if call hdmap failed, using empty map_polygons.
-        }
+    PointD position;
+    position.x = (*radar2world_pose)(0, 3);
+    position.y = (*radar2world_pose)(1, 3);
+    position.z = (*radar2world_pose)(2, 3);
+    // 2. Get map polygons.
+    HdmapStructPtr hdmap(new HdmapStruct);
+    if (FLAGS_enable_hdmap_input && hdmap_input_ &&
+        !hdmap_input_->GetROI(position, FLAGS_front_radar_forward_distance,
+                              &hdmap)) {
+      AWARN << "Failed to get roi. timestamp: " << GLOG_TIMESTAMP(timestamp)
+            << " position: [" << position.x << ", " << position.y << ", "
+            << position.z << "]";
+      // NOTE: if call hdmap failed, using empty map_polygons.
+    }
 
-       if (roi_filter_ != nullptr) {
-         roi_filter_->MergeHdmapStructToPolygons(hdmap, &map_polygons);
-       }
+    if (roi_filter_ != nullptr) {
+      roi_filter_->MergeHdmapStructToPolygons(hdmap, &map_polygons);
+    }
+
+    // 3. get car car_linear_speed
+    if (!GetCarLinearSpeed(timestamp, &(options.car_linear_speed))) {
+      AERROR << "Failed to call get_car_linear_speed. [timestamp: "
+             << GLOG_TIMESTAMP(timestamp);
+      return;
+    }
   }
-
-  // 3. get car car_linear_speed
-  if (!GetCarLinearSpeed(timestamp, &(options.car_linear_speed))) {
-    AERROR << "Failed to call get_car_linear_speed. [timestamp: "
-           << GLOG_TIMESTAMP(timestamp);
-    return;
-  }
-
   // 4. Call RadarDetector::detect.
   PERF_BLOCK_START();
   if (!FLAGS_use_navigation_mode) {
@@ -218,9 +219,9 @@ void RadarProcessSubnode::OnRadar(const ContiRadar &radar_obs) {
 
   const double end_timestamp = common::time::Clock::NowInSeconds();
   const double end_latency = (end_timestamp - unix_timestamp) * 1e3;
-  AINFO << "FRAME_STATISTICS:Radar:End:msg_time[" << GLOG_TIMESTAMP(timestamp)
-        << "]:cur_time[" << GLOG_TIMESTAMP(end_timestamp) << "]:cur_latency["
-        << end_latency << "]";
+  ADEBUG << "FRAME_STATISTICS:Radar: End:msg_time[" << GLOG_TIMESTAMP(timestamp)
+         << "]:cur_time[" << GLOG_TIMESTAMP(end_timestamp) << "]:cur_latency["
+         << end_latency << "]";
   ADEBUG << "radar process succ, there are " << (radar_objects->objects).size()
          << " objects.";
   return;
@@ -229,7 +230,7 @@ void RadarProcessSubnode::OnRadar(const ContiRadar &radar_obs) {
 void RadarProcessSubnode::OnLocalization(
     const apollo::localization::LocalizationEstimate &localization) {
   double timestamp = localization.header().timestamp_sec();
-  AINFO << "localization timestamp:" << GLOG_TIMESTAMP(timestamp);
+  ADEBUG << "localization timestamp:" << GLOG_TIMESTAMP(timestamp);
   LocalizationPair localization_pair;
   localization_pair.first = timestamp;
   localization_pair.second = localization;
@@ -240,7 +241,7 @@ bool RadarProcessSubnode::GetCarLinearSpeed(double timestamp,
                                             Eigen::Vector3f *car_linear_speed) {
   MutexLock lock(&mutex_);
   if (car_linear_speed == nullptr) {
-    AERROR << "Param car_linear_speed NULL error.";
+    AERROR << "Param car_linear_speed nullptr error.";
     return false;
   }
   if (localization_buffer_.empty()) {
@@ -269,8 +270,9 @@ bool RadarProcessSubnode::GetCarLinearSpeed(double timestamp,
     }
     distance = temp_distance;
   }
-  const auto &velocity =
-      localization_buffer_[idx].second.pose().linear_velocity();
+
+  idx = std::max(0, idx);
+  auto velocity = localization_buffer_[idx].second.pose().linear_velocity();
   (*car_linear_speed)[0] = velocity.x();
   (*car_linear_speed)[1] = velocity.y();
   (*car_linear_speed)[2] = velocity.z();
@@ -300,10 +302,6 @@ bool RadarProcessSubnode::InitFrameDependence() {
     hdmap_input_ = HDMapInput::instance();
     if (!hdmap_input_) {
       AERROR << "Failed to get HDMapInput instance.";
-      return false;
-    }
-    if (!hdmap_input_->Init()) {
-      AERROR << "Failed to Init HDMapInput";
       return false;
     }
     AINFO << "Get and Init hdmap_input succ.";

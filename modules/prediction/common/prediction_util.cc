@@ -21,6 +21,7 @@
 #include <string>
 
 #include "modules/common/log.h"
+#include "modules/common/math/linear_interpolation.h"
 #include "modules/prediction/common/prediction_gflags.h"
 #include "modules/prediction/common/prediction_map.h"
 
@@ -57,6 +58,95 @@ int SolveQuadraticEquation(const std::vector<double>& coefficients,
   roots->first = (0.0 - b + std::sqrt(delta)) / (2.0 * a);
   roots->second = (0.0 - b - std::sqrt(delta)) / (2.0 * a);
   return 0;
+}
+
+double EvaluateQuinticPolynomial(
+    const std::array<double, 6>& coeffs,
+    const double t, const uint32_t order,
+    const double end_t, const double end_v) {
+  if (t >= end_t) {
+    switch (order) {
+      case 0: {
+        double end_value = ((((coeffs[5] * end_t + coeffs[4]) * end_t +
+            coeffs[3]) * end_t + coeffs[2]) * end_t + coeffs[1]) * end_t +
+            coeffs[0];
+        return end_value + end_v * (t - end_t);
+      }
+      case 1: {
+        return end_v;
+      }
+      default: {
+        return 0.0;
+      }
+    }
+  }
+  switch (order) {
+    case 0: {
+      return ((((coeffs[5] * t + coeffs[4]) * t + coeffs[3]) * t +
+               coeffs[2]) * t + coeffs[1]) * t + coeffs[0];
+    }
+    case 1: {
+      return (((5.0 * coeffs[5] * t + 4.0 * coeffs[4]) * t +
+               3.0 * coeffs[3]) * t + 2.0 * coeffs[2]) * t + coeffs[1];
+    }
+    case 2: {
+      return (((20.0 * coeffs[5] * t + 12.0 * coeffs[4]) * t) +
+              6.0 * coeffs[3]) * t + 2.0 * coeffs[2];
+    }
+    case 3: {
+      return (60.0 * coeffs[5] * t + 24.0 * coeffs[4]) * t + 6.0 * coeffs[3];
+    }
+    case 4: {
+      return 120.0 * coeffs[5] * t + 24.0 * coeffs[4];
+    }
+    case 5: {
+      return 120.0 * coeffs[5];
+    }
+    default:
+      return 0.0;
+  }
+}
+
+double EvaluateQuarticPolynomial(
+    const std::array<double, 5>& coeffs,
+    const double t, const uint32_t order,
+    const double end_t, const double end_v) {
+  if (t >= end_t) {
+    switch (order) {
+      case 0: {
+        double end_value = (((coeffs[4] * end_t + coeffs[3]) * end_t +
+            coeffs[2]) * end_t + coeffs[1]) * end_t + coeffs[0];
+        return end_value + (t - end_t) * end_v;
+      }
+      case 1: {
+        return end_v;
+      }
+      default: {
+        return 0.0;
+      }
+    }
+  }
+  switch (order) {
+    case 0: {
+      return (((coeffs[4] * t + coeffs[3]) * t + coeffs[2]) * t +
+              coeffs[1]) * t + coeffs[0];
+    }
+    case 1: {
+      return ((4.0 * coeffs[4] * t + 3.0 * coeffs[3]) * t +
+              2.0 * coeffs[2]) * t + coeffs[1];
+    }
+    case 2: {
+      return (12.0 * coeffs[4] * t + 6.0 * coeffs[3]) * t + 2.0 * coeffs[2];
+    }
+    case 3: {
+      return 24.0 * coeffs[4] * t + 6.0 * coeffs[3];
+    }
+    case 4: {
+      return 24.0 * coeffs[4];
+    }
+    default:
+      return 0.0;
+  }
 }
 
 }  // namespace math_util
@@ -152,6 +242,20 @@ void GenerateFreeMoveTrajectoryPoints(
     acc_x = (*state)(4, 0);
     acc_y = (*state)(5, 0);
   }
+}
+
+double AdjustSpeedByCurvature(const double speed, const double curvature) {
+  if (std::abs(curvature) < FLAGS_turning_curvature_lower_bound) {
+    return speed;
+  }
+  if (std::abs(curvature) > FLAGS_turning_curvature_upper_bound) {
+    return 3.0;
+  }
+  return apollo::common::math::lerp(FLAGS_speed_at_lower_curvature,
+                                    FLAGS_turning_curvature_lower_bound,
+                                    FLAGS_speed_at_upper_curvature,
+                                    FLAGS_turning_curvature_upper_bound,
+                                    curvature);
 }
 
 }  // namespace predictor_util

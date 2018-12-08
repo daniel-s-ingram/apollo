@@ -38,8 +38,8 @@
 #include "modules/perception/tool/data_generator/sensor.h"
 
 /**
- * @namespace apollo::calibration
- * @brief apollo::calibration
+ * @namespace apollo::perception::data_generator
+ * @brief apollo::perception::data_generator
  */
 namespace apollo {
 namespace perception {
@@ -48,7 +48,7 @@ namespace data_generator {
 class DataGenerator : public apollo::common::ApolloApp {
  public:
   DataGenerator() = default;
-  ~DataGenerator() = default;
+  ~DataGenerator() { delete data_file_; }
 
   std::string Name() const override;
   apollo::common::Status Init() override;

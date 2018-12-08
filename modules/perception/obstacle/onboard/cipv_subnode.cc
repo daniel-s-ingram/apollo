@@ -1,4 +1,3 @@
-
 /******************************************************************************
  * Copyright 2017 The Apollo Authors. All Rights Reserved.
  *
@@ -17,9 +16,9 @@
 
 #include "modules/perception/obstacle/onboard/cipv_subnode.h"
 
-#include <map>
 #include <memory>
 #include <string>
+#include <unordered_map>
 #include <vector>
 #include "modules/perception/obstacle/onboard/motion_service.h"
 #include "modules/perception/onboard/dag_streaming.h"
@@ -35,7 +34,7 @@ using apollo::common::Status;
 
 using std::vector;
 using std::string;
-using std::map;
+using std::unordered_map;
 // using Event;
 // using EventID;
 // using EventMeta;
@@ -49,6 +48,7 @@ using std::map;
 bool CIPVSubnode::InitInternal() {
   CHECK(shared_data_manager_ != nullptr);
   // init camera object data
+  RegisterFactoryCIPVSubnode();
   camera_object_data_ = dynamic_cast<CameraObjectData *>(
       shared_data_manager_->GetSharedData("CameraObjectData"));
   if (camera_object_data_ == nullptr) {
@@ -72,8 +72,7 @@ bool CIPVSubnode::InitInternal() {
 
   AINFO << "Init shared datas successfully";
 
-  string reserve_;
-  map<string, string> reserve_field_map;
+  unordered_map<string, string> reserve_field_map;
   if (!SubnodeHelper::ParseReserveField(reserve_, &reserve_field_map)) {
     AERROR << "Failed to parse reserve string: " << reserve_;
     return false;
@@ -92,40 +91,46 @@ bool CIPVSubnode::InitInternal() {
 
 apollo::common::Status CIPVSubnode::ProcEvents() {
   Event event;
+
   if (!SubscribeEvents(&event)) {
+    AERROR << "[CIPVSubnode::ProcEvents] Failed to subscribe events";
     return Status(ErrorCode::PERCEPTION_ERROR, "Failed to subscribe events.");
   }
 
   std::shared_ptr<SensorObjects> sensor_objs;
   if (!GetSharedData(event, &sensor_objs)) {
+    AERROR << "[CIPVSubnode::ProcEvents] Failed to get shared data";
     return Status(ErrorCode::PERCEPTION_ERROR, "Failed to get shared data.");
   }
+
   CipvOptions cipv_options;
-  // Retrieve motion manager information and pass them to cipv_options
-  MotionService *motion_service = dynamic_cast<MotionService *>(
-      DAGStreaming::GetSubnodeByName("MotionService"));
-  VehicleInformation vehicle_information;
-  motion_service->GetVehicleInformation(event.timestamp, &vehicle_information);
-  cipv_options.velocity = vehicle_information.velocity;
-  cipv_options.yaw_rate = vehicle_information.yaw_rate;
-  cipv_options.yaw_angle =
-      vehicle_information.yaw_rate * vehicle_information.time_diff;
-  // cipv_options.yaw_angle = 0.0f;  // ***** fill in the value *****
-  // cipv_options.velocity = 5.0f;  // ***** fill in the value *****
-  // cipv_options.yaw_rate = 0.0f;  // ***** fill in the value *****
+  // // Retrieve motion manager information and pass them to cipv_options
+  // MotionService *motion_service = dynamic_cast<MotionService *>(
+  //     DAGStreaming::GetSubnodeByName("MotionService"));
+  // VehicleInformation vehicle_information;
+  // motion_service->GetVehicleInformation(event.timestamp,
+  //                                       &vehicle_information);
+  // cipv_options.velocity = vehicle_information.velocity;
+  // cipv_options.yaw_rate = vehicle_information.yaw_rate;
+  // cipv_options.yaw_angle =
+  //     vehicle_information.yaw_rate * vehicle_information.time_diff;
+  cipv_options.yaw_angle = 0.0f;  // ***** fill in the value *****
+  cipv_options.velocity = 5.0f;   // ***** fill in the value *****
+  cipv_options.yaw_rate = 0.0f;   // ***** fill in the value *****
   AINFO << "[CIPVSubnode] velocity " << cipv_options.velocity
         << ", yaw rate: " << cipv_options.yaw_rate
         << ", yaw angle: " << cipv_options.yaw_angle;
 
   // call cipv module
-  if (cipv_.DetermineCipv(sensor_objs, &cipv_options)) {
+  if (cipv_.DetermineCipv(sensor_objs->lane_objects, cipv_options,
+                          &sensor_objs->objects)) {
     PublishDataAndEvent(event.timestamp, sensor_objs, cipv_object_data_);
   }
-
   return Status::OK();
 }
 
-bool CIPVSubnode::InitOutputStream(const map<string, string> &fields) {
+bool CIPVSubnode::InitOutputStream(
+    const unordered_map<string, string> &fields) {
   auto camera_iter = fields.find("camera_event_id");
   if (camera_iter == fields.end()) {
     AERROR << "Failed to find camera_event_id";
@@ -154,7 +159,8 @@ bool CIPVSubnode::SubscribeEvents(Event *event) const {
     AERROR << "Failed to subscribe event: " << camera_event_id_;
     return false;
   }
-  if (!event_manager_->Subscribe(lane_event_id_, event)) {
+  // Subscribe only lane
+  if (!event_manager_->Subscribe(lane_event_id_, event, false)) {
     AERROR << "Failed to subscribe event: " << lane_event_id_;
     return false;
   }
@@ -171,11 +177,10 @@ bool CIPVSubnode::GetSharedData(const Event &event,
            << " timestamp:" << timestamp << " device_id_:" << device_id_;
     return false;
   }
-  bool get_data_succ = false;
-  // *** To DO *** uncomment
-  get_data_succ = camera_object_data_->Get(data_key, objs);
+  camera_object_data_->Get(data_key, objs);
   std::shared_ptr<LaneObjects> lane_objects;
-  get_data_succ = lane_shared_data_->Get(data_key, &lane_objects);
+
+  bool get_data_succ = lane_shared_data_->Get(data_key, &lane_objects);
   (*objs)->lane_objects = lane_objects;
 
   if (!get_data_succ) {
@@ -186,7 +191,7 @@ bool CIPVSubnode::GetSharedData(const Event &event,
 }
 
 void CIPVSubnode::PublishDataAndEvent(
-    const float &timestamp, const SharedDataPtr<SensorObjects> &sensor_objects,
+    const float timestamp, const SharedDataPtr<SensorObjects> &sensor_objects,
     CIPVObjectData *cipv_object_data) {
   std::string key = "";
   SubnodeHelper::ProduceSharedDataKey(timestamp, device_id_, &key);
@@ -202,8 +207,6 @@ void CIPVSubnode::PublishDataAndEvent(
     event_manager_->Publish(event);
   }
 }
-
-REGISTER_SUBNODE(CIPVSubnode);
 
 }  // namespace perception
 }  // namespace apollo

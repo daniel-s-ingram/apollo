@@ -17,6 +17,7 @@
 #ifndef MODULES_PERCEPTION_OBSTACLE_CAMERA_DETECTOR_YOLO_CAMERA_DETECTOR_H_
 #define MODULES_PERCEPTION_OBSTACLE_CAMERA_DETECTOR_YOLO_CAMERA_DETECTOR_H_
 
+#include <algorithm>
 #include <memory>
 #include <string>
 #include <vector>
@@ -24,10 +25,11 @@
 #include "caffe/caffe.hpp"
 
 #include "modules/perception/obstacle/camera/detector/yolo_camera_detector/proto/yolo.pb.h"
+#include "modules/perception/proto/yolo_camera_detector_config.pb.h"
 
-#include "include/region_output.h"
-#include "include/util.h"
-#include "modules/perception/lib/config_manager/config_manager.h"
+#include "modules/perception/cuda_util/network.h"
+#include "modules/perception/cuda_util/region_output.h"
+#include "modules/perception/cuda_util/util.h"
 #include "modules/perception/obstacle/base/types.h"
 #include "modules/perception/obstacle/camera/common/cnn_adapter.h"
 #include "modules/perception/obstacle/camera/detector/common/feature_extractor.h"
@@ -47,12 +49,16 @@ class YoloCameraDetector : public BaseCameraDetector {
                 CameraDetectorInitOptions()) override;
 
   bool Detect(const cv::Mat &frame, const CameraDetectorOptions &options,
-              std::vector<VisualObjectPtr> *objects) override;
+              std::vector<std::shared_ptr<VisualObject>> *objects) override;
 
   bool Multitask(const cv::Mat &frame, const CameraDetectorOptions &options,
-                 std::vector<VisualObjectPtr> *objects, cv::Mat *mask);
+                 std::vector<std::shared_ptr<VisualObject>> *objects,
+                 cv::Mat *mask) override;
 
-  bool Extract(std::vector<VisualObjectPtr> *objects) {
+  bool Lanetask(const cv::Mat &frame,
+                std::vector<cv::Mat> *predictions) override;
+
+  bool Extract(std::vector<std::shared_ptr<VisualObject>> *objects) override {
     for (auto &extractor : extractors_) {
       extractor->extract(objects);
     }
@@ -64,13 +70,18 @@ class YoloCameraDetector : public BaseCameraDetector {
  protected:
   bool init_cnn(const std::string &yolo_root);
 
+  bool init_cnn_lane(const std::string &yolo_root);
+
   void load_intrinsic(const CameraDetectorInitOptions &options);
+
+  void load_intrinsic_lane(const CameraDetectorInitOptions &options);
 
   void load_nms_params();
 
   void init_anchor(const std::string &yolo_root);
 
-  bool get_objects_cpu(std::vector<VisualObjectPtr> *objects);
+  bool get_objects_cpu(std::vector<std::shared_ptr<VisualObject>> *objects);
+  bool get_objects_gpu(std::vector<std::shared_ptr<VisualObject>> *objects);
 
   void get_object_helper(int idx, const float *loc_data, const float *obj_data,
                          const float *cls_data, const float *ori_data,
@@ -81,19 +92,21 @@ class YoloCameraDetector : public BaseCameraDetector {
 
  private:
   std::shared_ptr<CNNAdapter> cnnadapter_;
+  std::shared_ptr<CNNAdapter> cnnadapter_lane_;
 
-  std::shared_ptr<SyncedMemory> res_cls_tensor_ = nullptr;
-  std::shared_ptr<SyncedMemory> res_box_tensor_ = nullptr;
+  std::shared_ptr<caffe::SyncedMemory> res_cls_tensor_ = nullptr;
+  std::shared_ptr<caffe::SyncedMemory> res_box_tensor_ = nullptr;
 
-  std::shared_ptr<SyncedMemory> image_data_ = nullptr;
-  std::shared_ptr<SyncedMemory> overlapped_ = nullptr;
-  std::shared_ptr<SyncedMemory> idx_sm_ = nullptr;
-  std::shared_ptr<SyncedMemory> anchor_ = nullptr;
+  std::shared_ptr<caffe::SyncedMemory> image_data_ = nullptr;
+  std::shared_ptr<caffe::SyncedMemory> image_data_lane_ = nullptr;
+  std::shared_ptr<caffe::SyncedMemory> overlapped_ = nullptr;
+  std::shared_ptr<caffe::SyncedMemory> idx_sm_ = nullptr;
+  std::shared_ptr<caffe::SyncedMemory> anchor_ = nullptr;
   int height_ = 0;
   int width_ = 0;
-  float _min_2d_height = 0;
-  float _min_3d_height = 0;
-  float top_k_ = 1000;
+  float min_2d_height_ = 0.0f;
+  float min_3d_height_ = 0.0f;
+  int top_k_ = 1000;
   int obj_size_ = 0;
   int output_height_ = 0;
   int output_width_ = 0;
@@ -105,13 +118,24 @@ class YoloCameraDetector : public BaseCameraDetector {
   std::vector<ObjectType> types_;
   int offset_y_ = 0;
   NMSParam nms_;
-  float inter_cls_nms_thresh_ = 1;
-  float cross_class_merge_threshold_ = 1;
-  float confidence_threshold_ = 0.1;
+  float inter_cls_nms_thresh_ = 1.0f;
+  float cross_class_merge_threshold_ = 1.0f;
+  float confidence_threshold_ = 0.1f;
   std::shared_ptr<BaseProjector> projector_;
   obstacle::yolo::YoloParam yolo_param_;
+  obstacle::yolo::YoloParam lane_param_;
   int image_height_ = 0;
   int image_width_ = 0;
+
+  // parameters for lane detection
+  float confidence_threshold_lane_ = 0.95;
+  int offset_y_lane_ = 0;
+  int lane_output_height_lane_ = 0;
+  int lane_output_width_lane_ = 0;
+  int ignored_height_ = 0;
+  int num_lanes_ = 13;
+
+  yolo_camera_detector_config::ModelConfigs config_;
 };
 
 REGISTER_CAMERA_DETECTOR(YoloCameraDetector);

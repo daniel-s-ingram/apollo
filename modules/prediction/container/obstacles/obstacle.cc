@@ -30,6 +30,7 @@
 #include "modules/prediction/common/prediction_gflags.h"
 #include "modules/prediction/common/prediction_map.h"
 #include "modules/prediction/common/road_graph.h"
+#include "modules/prediction/container/obstacles/obstacle_clusters.h"
 #include "modules/prediction/network/rnn_model/rnn_model.h"
 
 namespace apollo {
@@ -40,6 +41,7 @@ using ::apollo::common::Point3D;
 using ::apollo::common::math::KalmanFilter;
 using ::apollo::common::util::FindOrDie;
 using ::apollo::common::util::FindOrNull;
+using ::apollo::common::PathPoint;
 using ::apollo::hdmap::LaneInfo;
 using ::apollo::perception::PerceptionObstacle;
 
@@ -132,8 +134,7 @@ bool Obstacle::IsNearJunction() {
 }
 
 void Obstacle::Insert(const PerceptionObstacle& perception_obstacle,
-                      const double timestamp,
-                      ObstacleClusters* const obstacle_clusters) {
+                      const double timestamp) {
   if (feature_history_.size() > 0 &&
       timestamp <= feature_history_.front().timestamp()) {
     AERROR << "Obstacle [" << id_ << "] received an older frame ["
@@ -176,7 +177,12 @@ void Obstacle::Insert(const PerceptionObstacle& perception_obstacle,
   // Set obstacle lane features
   SetCurrentLanes(&feature);
   SetNearbyLanes(&feature);
-  SetLaneGraphFeature(&feature, obstacle_clusters);
+  SetLaneGraphFeature(&feature);
+
+  if (FLAGS_adjust_vehicle_heading_by_lane &&
+     type_ == PerceptionObstacle::VEHICLE) {
+    AdjustHeadingByLane(&feature);
+  }
 
   // Insert obstacle feature to history
   InsertFeatureToHistory(feature);
@@ -218,7 +224,7 @@ void Obstacle::UpdateStatus(Feature* feature) {
   double velocity_y = state(3, 0);
   double speed = std::hypot(velocity_x, velocity_y);
   double velocity_heading = std::atan2(velocity_y, velocity_x);
-  if (FLAGS_enable_adjust_velocity_heading) {
+  if (FLAGS_adjust_velocity_by_position_shift) {
     UpdateVelocity(feature->theta(), &velocity_x, &velocity_y,
                    &velocity_heading, &speed);
   }
@@ -370,9 +376,13 @@ void Obstacle::SetVelocity(const PerceptionObstacle& perception_obstacle,
   }
 
   double speed = std::hypot(velocity_x, velocity_y);
-  double velocity_heading = perception_obstacle.theta();
+  double velocity_heading = std::atan2(velocity_y, velocity_x);
+  if (FLAGS_adjust_velocity_by_obstacle_heading) {
+    velocity_heading = perception_obstacle.theta();
+  }
 
-  if (!FLAGS_use_navigation_mode && FLAGS_enable_adjust_velocity_heading &&
+  if (!FLAGS_use_navigation_mode &&
+      FLAGS_adjust_velocity_by_position_shift &&
       history_size() > 0) {
     double diff_x =
         feature->position().x() - feature_history_.front().position().x();
@@ -421,6 +431,23 @@ void Obstacle::SetVelocity(const PerceptionObstacle& perception_obstacle,
          << std::setprecision(6) << velocity_heading << "] ";
   ADEBUG << "Obstacle [" << id_ << "] has speed [" << std::fixed
          << std::setprecision(6) << speed << "].";
+}
+
+void Obstacle::AdjustHeadingByLane(Feature* feature) {
+  if (!feature->has_lane() ||
+      !feature->lane().has_lane_feature()) {
+    return;
+  }
+  double velocity_heading = feature->velocity_heading();
+  double lane_heading = feature->lane().lane_feature().lane_heading();
+  double angle_diff = feature->lane().lane_feature().angle_diff();
+  if (std::abs(angle_diff) < FLAGS_max_angle_diff_to_adjust_velocity) {
+    velocity_heading = lane_heading;
+    double speed = feature->speed();
+    feature->mutable_velocity()->set_x(speed * std::cos(velocity_heading));
+    feature->mutable_velocity()->set_y(speed * std::sin(velocity_heading));
+    feature->set_velocity_heading(velocity_heading);
+  }
 }
 
 void Obstacle::UpdateVelocity(const double theta, double* velocity_x,
@@ -676,9 +703,18 @@ void Obstacle::UpdateKFPedestrianTracker(const Feature& feature) {
 void Obstacle::SetCurrentLanes(Feature* feature) {
   Eigen::Vector2d point(feature->position().x(), feature->position().y());
   double heading = feature->velocity_heading();
+  int max_num_lane = FLAGS_max_num_current_lane;
+  double max_angle_diff = FLAGS_max_lane_angle_diff;
+  double lane_search_radius = FLAGS_lane_search_radius;
+  if (PredictionMap::InJunction(point, FLAGS_junction_search_radius)) {
+    max_num_lane = FLAGS_max_num_current_lane_in_junction;
+    max_angle_diff = FLAGS_max_lane_angle_diff_in_junction;
+    lane_search_radius = FLAGS_lane_search_radius_in_junction;
+  }
   std::vector<std::shared_ptr<const LaneInfo>> current_lanes;
   PredictionMap::OnLane(current_lanes_, point, heading,
-                        FLAGS_lane_search_radius, true, &current_lanes);
+                        lane_search_radius, true, max_num_lane,
+                        max_angle_diff, &current_lanes);
   current_lanes_ = current_lanes;
   if (current_lanes_.empty()) {
     ADEBUG << "Obstacle [" << id_ << "] has no current lanes.";
@@ -719,6 +755,7 @@ void Obstacle::SetCurrentLanes(Feature* feature) {
     lane_feature->set_lane_s(s);
     lane_feature->set_lane_l(l);
     lane_feature->set_angle_diff(angle_diff);
+    lane_feature->set_lane_heading(nearest_point_heading);
     lane_feature->set_dist_to_left_boundary(left - l);
     lane_feature->set_dist_to_right_boundary(right + l);
     if (std::fabs(angle_diff) < min_heading_diff) {
@@ -739,10 +776,15 @@ void Obstacle::SetCurrentLanes(Feature* feature) {
 
 void Obstacle::SetNearbyLanes(Feature* feature) {
   Eigen::Vector2d point(feature->position().x(), feature->position().y());
+  int max_num_lane = FLAGS_max_num_nearby_lane;
+  if (PredictionMap::InJunction(point, FLAGS_junction_search_radius)) {
+    max_num_lane = FLAGS_max_num_nearby_lane_in_junction;
+  }
   double theta = feature->velocity_heading();
   std::vector<std::shared_ptr<const LaneInfo>> nearby_lanes;
   PredictionMap::NearbyLanesByCurrentLanes(
-      point, theta, FLAGS_lane_search_radius, current_lanes_, &nearby_lanes);
+      point, theta, FLAGS_lane_search_radius, current_lanes_,
+      max_num_lane, &nearby_lanes);
   if (nearby_lanes.empty()) {
     ADEBUG << "Obstacle [" << id_ << "] has no nearby lanes.";
     return;
@@ -795,21 +837,19 @@ void Obstacle::SetNearbyLanes(Feature* feature) {
   }
 }
 
-void Obstacle::SetLaneGraphFeature(Feature* feature,
-                                   ObstacleClusters* const obstacle_clusters) {
+void Obstacle::SetLaneGraphFeature(Feature* feature) {
   double speed = feature->speed();
-  double acc = feature->acc();
-  double road_graph_distance =
+  double road_graph_distance = std::max(
       speed * FLAGS_prediction_duration +
-      0.5 * acc * FLAGS_prediction_duration * FLAGS_prediction_duration +
-      FLAGS_min_prediction_length;
+      0.5 * FLAGS_max_acc * FLAGS_prediction_duration *
+      FLAGS_prediction_duration, FLAGS_min_prediction_length);
 
   int seq_id = 0;
   int curr_lane_count = 0;
   for (auto& lane : feature->lane().current_lane_feature()) {
     std::shared_ptr<const LaneInfo> lane_info =
         PredictionMap::LaneById(lane.lane_id());
-    const LaneGraph& lane_graph = obstacle_clusters->GetLaneGraph(
+    const LaneGraph& lane_graph = ObstacleClusters::GetLaneGraph(
         lane.lane_s(), road_graph_distance, lane_info);
     if (lane_graph.lane_sequence_size() > 0) {
       ++curr_lane_count;
@@ -833,7 +873,7 @@ void Obstacle::SetLaneGraphFeature(Feature* feature,
   for (auto& lane : feature->lane().nearby_lane_feature()) {
     std::shared_ptr<const LaneInfo> lane_info =
         PredictionMap::LaneById(lane.lane_id());
-    const LaneGraph& lane_graph = obstacle_clusters->GetLaneGraph(
+    const LaneGraph& lane_graph = ObstacleClusters::GetLaneGraph(
         lane.lane_s(), road_graph_distance, lane_info);
     if (lane_graph.lane_sequence_size() > 0) {
       ++nearby_lane_count;
@@ -855,6 +895,7 @@ void Obstacle::SetLaneGraphFeature(Feature* feature,
 
   if (feature->has_lane() && feature->lane().has_lane_graph()) {
     SetLanePoints(feature);
+    SetLaneSequencePath(feature->mutable_lane()->mutable_lane_graph());
   }
 
   ADEBUG << "Obstacle [" << id_ << "] set lane graph features.";
@@ -881,7 +922,9 @@ void Obstacle::SetLanePoints(Feature* feature) {
     double start_s = lane_sequence->lane_segment(lane_index).start_s();
     double total_s = 0.0;
     double lane_seg_s = start_s;
-    while (lane_index < lane_sequence->lane_segment_size()) {
+    std::size_t count_point = 0;
+    while (lane_index < lane_sequence->lane_segment_size() &&
+           count_point < FLAGS_max_num_lane_point) {
       if (lane_seg_s > lane_segment->end_s()) {
         start_s = lane_seg_s - lane_segment->end_s();
         lane_seg_s = start_s;
@@ -919,12 +962,45 @@ void Obstacle::SetLanePoints(Feature* feature) {
         lane_point.set_angle_diff(lane_point_angle_diff);
         lane_segment->set_lane_turn_type(PredictionMap::LaneTurnType(lane_id));
         lane_segment->add_lane_point()->CopyFrom(lane_point);
+        ++count_point;
         total_s += FLAGS_target_lane_gap;
         lane_seg_s += FLAGS_target_lane_gap;
       }
     }
   }
   ADEBUG << "Obstacle [" << id_ << "] has lane segments and points.";
+}
+
+void Obstacle::SetLaneSequencePath(LaneGraph* const lane_graph) {
+  for (int i = 0; i < lane_graph->lane_sequence_size(); ++i) {
+    LaneSequence* lane_sequence = lane_graph->mutable_lane_sequence(i);
+    double lane_segment_s = 0.0;
+    for (int j = 0; j < lane_sequence->lane_segment_size(); ++j) {
+      LaneSegment* lane_segment = lane_sequence->mutable_lane_segment(j);
+      for (int k = 0; k < lane_segment->lane_point_size(); ++k) {
+        LanePoint* lane_point = lane_segment->mutable_lane_point(k);
+        PathPoint path_point;
+        path_point.set_s(lane_point->relative_s());
+        path_point.set_theta(lane_point->heading());
+        lane_sequence->add_path_point()->CopyFrom(path_point);
+      }
+      lane_segment_s += lane_segment->total_length();
+    }
+    int num_path_point = lane_sequence->path_point_size();
+    if (num_path_point <= 0) {
+      continue;
+    }
+    for (int j = 0; j + 1 < num_path_point; ++j) {
+      PathPoint* first_point = lane_sequence->mutable_path_point(j);
+      PathPoint* second_point = lane_sequence->mutable_path_point(j + 1);
+      double delta_theta = apollo::common::math::AngleDiff(
+          second_point->theta(), first_point->theta());
+      double delta_s = second_point->s() - first_point->s();
+      double kappa = std::abs(delta_theta / (delta_s + FLAGS_double_precision));
+      lane_sequence->mutable_path_point(j)->set_kappa(kappa);
+    }
+    lane_sequence->mutable_path_point(num_path_point - 1)->set_kappa(0.0);
+  }
 }
 
 void Obstacle::SetMotionStatus() {
@@ -942,7 +1018,8 @@ void Obstacle::SetMotionStatus() {
   double start_y = 0.0;
   double avg_drift_x = 0.0;
   double avg_drift_y = 0.0;
-  int len = std::min(history_size, FLAGS_still_obstacle_history_length);
+  int len = std::min(history_size, FLAGS_max_still_obstacle_history_length);
+  len = std::max(len, FLAGS_min_still_obstacle_history_length);
   CHECK_GT(len, 1);
 
   auto feature_riter = feature_history_.rbegin();

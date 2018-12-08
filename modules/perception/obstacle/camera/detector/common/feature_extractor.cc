@@ -51,7 +51,7 @@ bool ReorgFeatureExtractor::init(
 
   skip_reorg_ = ref_height == feat_height;
   if (skip_reorg_) {
-    AINFO << "Skip reorg for " << param.feat_blob();
+    ADEBUG << "Skip reorg for " << param.feat_blob();
     reorg_feat_blob_ = feat_blob;
     return true;
   }
@@ -65,17 +65,18 @@ bool ReorgFeatureExtractor::init(
   auto *reorg_param = layer_param.mutable_reorg_param();
   int reorg_stride = feat_height / ref_height;
   reorg_param->set_stride(reorg_stride);
-  AINFO << "Use Reorg: stride=" << reorg_param->stride();
+  ADEBUG << "Use Reorg: stride=" << reorg_param->stride();
   reorg_layer_ = caffe::LayerRegistry<float>::CreateLayer(layer_param);
   reorg_layer_->SetUp(bottom_vec_, top_vec_);
 
-  AINFO << "Shape mismatch: feat_blob=" << feat_blob
-        << ", reorg_stride=" << reorg_stride;
+  ADEBUG << "Shape mismatch: feat_blob=" << feat_blob
+         << ", reorg_stride=" << reorg_stride;
 
   return true;
 }
 
-bool ReorgFeatureExtractor::extract(std::vector<VisualObjectPtr> *objects) {
+bool ReorgFeatureExtractor::extract(
+    std::vector<std::shared_ptr<VisualObject>> *objects) {
   CHECK_NOTNULL(objects);
   if (objects->empty()) {
     return true;
@@ -93,7 +94,7 @@ bool ReorgFeatureExtractor::extract(std::vector<VisualObjectPtr> *objects) {
     int offset = reorg_feat_blob_->offset(0, 0, y, x);
     int feat_dim = reorg_feat_blob_->channels();
     int spatial_dim = reorg_feat_blob_->count(2);
-    AINFO << "feat_dim: " << feat_dim << ", spatial_dim: " << spatial_dim;
+    ADEBUG << "feat_dim: " << feat_dim << ", spatial_dim: " << spatial_dim;
     const float *feat_data = reorg_feat_blob_->cpu_data() + offset;
     for (int c = 0; c < feat_dim; ++c) {
       obj->object_feature.push_back(feat_data[c * spatial_dim]);
@@ -131,9 +132,9 @@ bool ROIPoolingFeatureExtractor::init(
   rp_param->set_use_floor(param.roi_pooling_param().use_floor());
   rp_param->set_spatial_scale(static_cast<float>(feat_height) / input_height_);
 
-  AINFO << "Use ROIPooling: pooled_h=" << rp_param->pooled_h()
-        << ", pooled_w=" << rp_param->pooled_w()
-        << ", spatial_scale=" << rp_param->spatial_scale();
+  ADEBUG << "Use ROIPooling: pooled_h=" << rp_param->pooled_h()
+         << ", pooled_w=" << rp_param->pooled_w()
+         << ", spatial_scale=" << rp_param->spatial_scale();
   roi_pooling_layer_ = caffe::LayerRegistry<float>::CreateLayer(layer_param);
   rois_blob_.Reshape({1, 5});
   roi_pooling_layer_->SetUp(bottom_vec_, top_vec_);
@@ -141,7 +142,7 @@ bool ROIPoolingFeatureExtractor::init(
 }
 
 bool ROIPoolingFeatureExtractor::extract(
-    std::vector<VisualObjectPtr> *objects) {
+    std::vector<std::shared_ptr<VisualObject>> *objects) {
   CHECK_NOTNULL(objects);
   if (objects->empty()) {
     return true;
@@ -154,8 +155,8 @@ bool ROIPoolingFeatureExtractor::extract(
     rois_data[2] = obj->upper_left[1] * input_height_;
     rois_data[3] = obj->lower_right[0] * input_width_;
     rois_data[4] = obj->lower_right[1] * input_height_;
-    AINFO << rois_data[0] << " " << rois_data[1] << " " << rois_data[2] << " "
-          << rois_data[3] << " " << rois_data[4];
+    ADEBUG << rois_data[0] << " " << rois_data[1] << " " << rois_data[2] << " "
+           << rois_data[3] << " " << rois_data[4];
     rois_data += rois_blob_.offset(1);
   }
   roi_pooling_layer_->Forward(bottom_vec_, top_vec_);

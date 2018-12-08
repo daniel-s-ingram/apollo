@@ -34,8 +34,9 @@ void WebSocketHandler::handleReadyState(CivetServer *server, Connection *conn) {
   {
     std::unique_lock<std::mutex> lock(mutex_);
     connections_.emplace(conn, std::make_shared<std::mutex>());
-    AINFO << "Accepted connection. Total connections: " << connections_.size();
   }
+  AINFO << name_
+        << ": Accepted connection. Total connections: " << connections_.size();
 
   // Trigger registered new connection handlers.
   for (const auto handler : connection_ready_handlers_) {
@@ -45,19 +46,25 @@ void WebSocketHandler::handleReadyState(CivetServer *server, Connection *conn) {
 
 void WebSocketHandler::handleClose(CivetServer *server,
                                    const Connection *conn) {
+  // Remove from the store of currently open connections. Copy the mutex out
+  // so that it won't be reclaimed during map.erase().
+  Connection *connection = const_cast<Connection *>(conn);
+
+  std::shared_ptr<std::mutex> connection_lock;
   {
     std::unique_lock<std::mutex> lock(mutex_);
-
-    // Remove from the store of currently open connections. Copy the mutex out
-    // so that it won't be reclaimed during map.erase().
-    Connection *connection = const_cast<Connection *>(conn);
-    std::shared_ptr<std::mutex> connection_lock = connections_[connection];
-    {
-      std::unique_lock<std::mutex> lock(*connection_lock);
-      connections_.erase(connection);
-    }
-    AINFO << "Connection closed. Total connections: " << connections_.size();
+    connection_lock = connections_[connection];
   }
+
+  {
+    // Make sure there's no data being sent via the connection
+    std::unique_lock<std::mutex> lock_connection(*connection_lock);
+    std::unique_lock<std::mutex> lock(mutex_);
+    connections_.erase(connection);
+  }
+
+  AINFO << name_
+        << ": Connection closed. Total connections: " << connections_.size();
 }
 
 bool WebSocketHandler::BroadcastData(const std::string &data, bool skippable) {
@@ -94,7 +101,8 @@ bool WebSocketHandler::SendData(Connection *conn, const std::string &data,
   {
     std::unique_lock<std::mutex> lock(mutex_);
     if (!ContainsKey(connections_, conn)) {
-      AERROR << "Trying to send to an uncached connection, skipping.";
+      AERROR << name_
+             << ": Trying to send to an uncached connection, skipping.";
       return false;
     }
     // Copy the lock so that it still exists if the connection is closed after
@@ -109,9 +117,11 @@ bool WebSocketHandler::SendData(Connection *conn, const std::string &data,
     // being sent.
     // 2. The connection has been closed.
     if (skippable) {
+      AWARN << "Skip sending a droppable message!";
       return false;
     } else {
       connection_lock->lock();  // Block to acquire the lock.
+      std::unique_lock<std::mutex> lock(mutex_);
       if (!ContainsKey(connections_, conn)) {
         return false;
       }
@@ -121,8 +131,9 @@ bool WebSocketHandler::SendData(Connection *conn, const std::string &data,
   // Note that while we are holding the connection lock, the connection won't be
   // closed and removed.
   int ret;
-  PERF_BLOCK(StrCat("Writing ", data.size(), " bytes via websocket took"),
-             0.1) {
+  PERF_BLOCK(
+      StrCat(name_, ": Writing ", data.size(), " bytes via websocket took"),
+      0.1) {
     ret = mg_websocket_write(conn, op_code, data.c_str(), data.size());
   }
   connection_lock->unlock();
@@ -143,7 +154,8 @@ bool WebSocketHandler::SendData(Connection *conn, const std::string &data,
       msg = StrCat("Expect to send ", data.size(), " bytes. But sent ", ret,
                    " bytes");
     }
-    AWARN << "Failed to send data via websocket connection. Reason: " << msg;
+    AWARN << name_
+          << ": Failed to send data via websocket connection. Reason: " << msg;
     return false;
   }
 
@@ -180,7 +192,7 @@ bool WebSocketHandler::handleData(CivetServer *server, Connection *conn,
         result = handleBinaryData(conn, data_.str());
         break;
       default:
-        AERROR << "Unknown WebSocket bits flag: " << bits;
+        AERROR << name_ << ": Unknown WebSocket bits flag: " << bits;
         break;
     }
 

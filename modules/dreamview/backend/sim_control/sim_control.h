@@ -24,11 +24,13 @@
 #include <string>
 
 #include "gtest/gtest_prod.h"
+
+#include "modules/map/relative_map/proto/navigation.pb.h"
+
 #include "modules/common/adapters/adapter_manager.h"
 #include "modules/dreamview/backend/common/dreamview_gflags.h"
 #include "modules/dreamview/backend/map/map_service.h"
 #include "modules/dreamview/backend/sim_control/sim_control_interface.h"
-#include "modules/map/relative_map/proto/navigation.pb.h"
 
 /**
  * @namespace apollo::dreamview
@@ -51,9 +53,7 @@ class SimControl : SimControlInterface {
    */
   explicit SimControl(const MapService *map_service);
 
-  inline bool IsEnabled() const {
-    return enabled_;
-  }
+  bool IsEnabled() const { return enabled_; }
 
   /**
    * @brief setup callbacks and timer
@@ -78,9 +78,6 @@ class SimControl : SimControlInterface {
    */
   void Reset() override;
 
-  /**
-   * @brief Publish simulated localization and chassis.
-   */
   void RunOnce() override;
 
  private:
@@ -89,28 +86,30 @@ class SimControl : SimControlInterface {
   void OnReceiveNavigationInfo(
       const relative_map::NavigationInfo &navigation_info);
 
-  // Reset the start point, which can be a dummy point on the map or received
-  // from the routing module.
-  void SetStartPoint(const double x, const double y);
+  /**
+   * @brief Predict the next trajectory point using perfect control model
+   */
+  bool PerfectControlModel(apollo::common::TrajectoryPoint *point);
+
+  void PublishChassis(double cur_speed);
+
+  void PublishLocalization(const apollo::common::TrajectoryPoint &point);
+
+  void InitAdapter();
+
+  void InitStartPoint(double start_velocity, double start_acceleration);
+
+  // Reset the start point, which can be a dummy point on the map, a current
+  // localization pose, or a start position received from the routing module.
+  void SetStartPoint(const apollo::common::TrajectoryPoint &point);
 
   void Freeze();
 
-  double AbsoluteTimeOfNextPoint();
-  bool NextPointWithinRange();
-
   void TimerCallback(const ros::TimerEvent &event);
-
-  void PublishChassis(double lambda);
-  void PublishLocalization(double lambda);
 
   void ClearPlanning();
 
-  template <typename T>
-  T Interpolate(T prev, T next, double lambda) {
-    return (1 - lambda) * prev + lambda * next;
-  }
-
-  const MapService *map_service_;
+  const MapService *map_service_ = nullptr;
 
   // The timer to publish simulated localization and chassis messages.
   ros::Timer sim_control_timer_;
@@ -122,20 +121,26 @@ class SimControl : SimControlInterface {
   apollo::planning::ADCTrajectory current_trajectory_;
   // The index of the previous and next point with regard to the
   // current_trajectory.
-  int prev_point_index_;
-  int next_point_index_;
+  int prev_point_index_ = 0;
+  int next_point_index_ = 0;
 
   // Whether there's a planning received after the most recent routing.
-  bool received_planning_;
+  bool received_planning_ = false;
 
   // Number of planning received in terms of one RoutingResponse.
-  int planning_count_;
+  int planning_count_ = -1;
 
-  bool re_routing_triggered_;
+  // Whether planning has requested a re-routing.
+  bool re_routing_triggered_ = false;
 
-  // Whether the sim control is enabled / initialized.
-  bool enabled_;
-  bool inited_;
+  // Whether the sim control is enabled.
+  bool enabled_ = false;
+
+  // Whether the adapter setup has been initialized.
+  bool adapter_inited_ = false;
+
+  // Whether start point is initialized from actual localization data
+  bool start_point_from_localization_ = false;
 
   // The header of the routing planning is following.
   apollo::common::Header current_routing_header_;
@@ -144,10 +149,6 @@ class SimControl : SimControlInterface {
   apollo::common::TrajectoryPoint next_point_;
 
   common::PathPoint adc_position_;
-
-  // Initial velocity and acceleration of the main vehicle
-  double start_velocity_ = 0.0;
-  double start_acceleration_ = 0.0;
 
   static constexpr int kPlanningCountToStart = 5;
 

@@ -32,6 +32,7 @@ cc_library(
         "//modules/perception/obstacle/lidar/dummy",
         "//modules/perception/obstacle/lidar/interface",
         "//modules/perception/obstacle/lidar/object_builder/min_box",
+        "//modules/perception/obstacle/lidar/object_filter/low_object_filter",
         "//modules/perception/obstacle/lidar/roi_filter/hdmap_roi_filter",
         "//modules/perception/obstacle/lidar/segmentation/cnnseg",
         "//modules/perception/obstacle/lidar/tracker/hm_tracker",
@@ -49,6 +50,7 @@ cc_library(
     hdrs = [
         "lidar_process_subnode.h",
         "object_shared_data.h",
+        "scene_shared_data.h",
     ],
     deps = [
         ":hdmapinput",
@@ -58,6 +60,7 @@ cc_library(
         "//modules/perception/obstacle/lidar/dummy",
         "//modules/perception/obstacle/lidar/interface",
         "//modules/perception/obstacle/lidar/object_builder/min_box",
+        "//modules/perception/obstacle/lidar/object_filter/low_object_filter",
         "//modules/perception/obstacle/lidar/roi_filter/hdmap_roi_filter",
         "//modules/perception/obstacle/lidar/segmentation/cnnseg",
         "//modules/perception/obstacle/lidar/tracker/hm_tracker",
@@ -111,6 +114,8 @@ cc_library(
         ":perception_obstacle_shared_data",
         "//modules/common:log",
         "//modules/common/adapters:adapter_manager",
+        "//modules/common/time",
+        "//modules/perception/common",
         "//modules/perception/lib/config_manager",
         "//modules/perception/obstacle/camera/converter",
         "//modules/perception/obstacle/camera/detector/yolo_camera_detector",
@@ -129,10 +134,14 @@ cc_library(
 cc_library(
     name = "fusion_subnode",
     srcs = [
+        "async_fusion_subnode.cc",
         "fusion_subnode.cc",
     ],
     hdrs = [
+        "async_fusion_subnode.h",
+        "fusion_shared_data.h",
         "fusion_subnode.h",
+        "lane_shared_data.h",
         "object_shared_data.h",
     ],
     deps = [
@@ -142,9 +151,12 @@ cc_library(
         "//modules/common/configs:config_gflags",
         "//modules/common/time",
         "//modules/perception/lib/config_manager",
+        "//modules/perception/obstacle/camera/cipv:camera_cipv",
+        "//modules/perception/obstacle/fusion/async_fusion",
         "//modules/perception/obstacle/fusion/probabilistic_fusion",
         "//modules/perception/obstacle/lidar/roi_filter/hdmap_roi_filter",
         "//modules/perception/obstacle/lidar/visualizer/opengl_visualizer",
+        "//modules/perception/obstacle/onboard:motion_subnode",
         "//modules/perception/onboard",
         "@ros//:ros_common",
     ],
@@ -159,6 +171,7 @@ cc_library(
         "motion_service.h",
     ],
     deps = [
+        ":perception_obstacle_shared_data",
         "//modules/common/adapters:adapter_manager",
         "//modules/perception/lib/config_manager",
         "//modules/perception/obstacle/camera/motion",
@@ -180,6 +193,7 @@ cc_library(
         ":hdmapinput",
         "//modules/common/adapters:adapter_manager",
         "//modules/perception/lib/config_manager",
+        "//modules/perception/obstacle/fusion/async_fusion",
         "//modules/perception/obstacle/fusion/probabilistic_fusion",
         "//modules/perception/obstacle/lidar/roi_filter/hdmap_roi_filter",
         "//modules/perception/obstacle/lidar/visualizer/opengl_visualizer",
@@ -199,9 +213,12 @@ cc_library(
     hdrs = [
         "camera_shared_data.h",
         "fusion_shared_data.h",
+        "lane_shared_data.h",
+        "scene_shared_data.h",
     ],
     deps = [
         "//modules/perception/obstacle/base",
+        "//modules/perception/obstacle/camera/lane_post_process/common:type",
         "//modules/perception/onboard",
     ],
 )
@@ -215,6 +232,7 @@ cc_library(
         "object_shared_data.h",
     ],
     deps = [
+        ":perception_obstacle_shared_data",
         "//modules/common:log",
         "//modules/common/adapters:adapter_manager",
         "//modules/common/time",
@@ -223,8 +241,9 @@ cc_library(
         "//modules/perception/lib/config_manager",
         "//modules/perception/obstacle/base",
         "//modules/perception/obstacle/camera/interface",
-        "//modules/perception/obstacle/onboard:perception_obstacle_shared_data",
-        "//modules/perception/onboard",
+        "//modules/perception/obstacle/camera/lane_post_process/cc_lane_post_processor",
+        "//modules/perception/obstacle/camera/motion",
+        "//modules/perception/obstacle/onboard:motion_subnode",
         "@eigen",
         "@opencv2//:core",
     ],
@@ -245,7 +264,9 @@ cc_library(
         "//modules/perception/lib/config_manager",
         "//modules/perception/obstacle/base",
         "//modules/perception/obstacle/camera/common:util",
+        "//modules/perception/obstacle/camera/motion",
         "//modules/perception/obstacle/camera/visualizer",
+        "//modules/perception/obstacle/onboard:motion_subnode",
         "//modules/perception/onboard",
     ],
 )
@@ -270,6 +291,34 @@ cc_library(
         "//modules/perception/obstacle/onboard:motion_subnode",
         "//modules/perception/onboard",
     ],
+)
+
+cc_library(
+    name = "ultrasonic_obstacle_subnode",
+    srcs = [
+        "ultrasonic_obstacle_subnode.cc",
+    ],
+    hdrs = [
+        "ultrasonic_obstacle_subnode.h",
+        "object_shared_data.h",
+    ],
+    deps = [
+        "//modules/perception/proto:perception_ultrasonic_proto",
+        "//modules/common",
+        "//modules/common:log",
+        "//modules/common/configs:config_gflags",
+        "//modules/common/configs:vehicle_config_helper",
+        "//modules/common/adapters:adapter_manager",
+        "//modules/common/math:quaternion",
+        "//modules/common/vehicle_state:vehicle_state_provider",
+        "//modules/perception/lib/base",
+        "//modules/perception/lib/config_manager",
+        "//modules/perception/obstacle/lidar/roi_filter/hdmap_roi_filter",
+        "//modules/perception/onboard:onboard",
+        "@eigen//:eigen",
+        "@gtest//:gtest",
+        "@ros//:ros_common",
+    ]
 )
 
 cc_test(

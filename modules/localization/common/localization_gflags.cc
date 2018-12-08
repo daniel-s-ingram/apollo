@@ -79,11 +79,10 @@ DEFINE_double(lidar_height_default, 1.80,
 DEFINE_int32(
     lidar_localization_mode, 2,
     "Localization mode, 0 for intensity, 1 for altitude, 2 for fusion.");
-DEFINE_int32(lidar_yaw_align_mode, 1,
-             "image yaw align mode, 0 for intensity, "
+DEFINE_int32(lidar_yaw_align_mode, 2,
+             "image yaw align mode, 0 for align off, "
              "1 for fusion, 2 for fusion with multithread.");
 DEFINE_int32(lidar_filter_size, 11, "Lidar filter size");
-DEFINE_int32(lidar_thread_num, 2, "Lidar thread number");
 DEFINE_double(lidar_imu_max_delay_time, 0.4,
               "Lidar msg and imu msg max delay time");
 DEFINE_double(lidar_map_coverage_theshold, 0.9,
@@ -98,11 +97,9 @@ DEFINE_bool(integ_sins_state_check, false, "");
 DEFINE_double(integ_sins_state_span_time, 60.0, "");
 DEFINE_double(integ_sins_state_pos_std, 1.0, "");
 DEFINE_double(vel_threshold_get_yaw, 5.0, "");
-DEFINE_bool(integ_debug_log_flag, false, "");
 
 // gnss module
 DEFINE_bool(enable_ins_aid_rtk, false, "");
-DEFINE_bool(enable_auto_save_eph_file, true, "");
 DEFINE_string(eph_buffer_path, "", "");
 DEFINE_string(
     ant_imu_leverarm_file,
@@ -140,9 +137,6 @@ DEFINE_double(imu_vehicle_qx, 0.0, "Vehicle imu quaternion qx");
 DEFINE_double(imu_vehicle_qy, 0.0, "Vehicle imu quaternion qy");
 DEFINE_double(imu_vehicle_qz, 0.0, "Vehicle imu quaternion qz");
 DEFINE_double(imu_vehicle_qw, 1.0, "Vehicle imu quaternion qw");
-
-// debug
-DEFINE_bool(use_visualize, false, "");
 
 // visualization
 DEFINE_string(map_visual_dir, "data/map_visual",

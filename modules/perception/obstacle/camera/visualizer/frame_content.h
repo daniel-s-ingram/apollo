@@ -20,6 +20,7 @@
 #include <deque>
 #include <iomanip>
 #include <map>
+#include <memory>
 #include <sstream>
 #include <string>
 #include <thread>
@@ -27,6 +28,7 @@
 
 #include "boost/shared_ptr.hpp"
 
+#include "modules/perception/common/perception_gflags.h"
 #include "modules/perception/obstacle/base/object.h"
 #include "modules/perception/obstacle/base/object_supplement.h"
 #include "modules/perception/obstacle/radar/interface/base_radar_detector.h"
@@ -47,15 +49,24 @@ class CameraContent : public BaseContent {
  public:
   CameraContent()
       : camera_frame_supplement_(new CameraFrameSupplement),
-        _pose_c2w(Eigen::Matrix4d::Identity()) {}
-  std::vector<ObjectPtr> camera_objects_;
+        _pose_c2w(Eigen::Matrix4d::Identity()),
+        _pose_c2w_static(Eigen::Matrix4d::Identity()) {}
+  std::vector<std::shared_ptr<Object>> camera_objects_;
   CameraFrameSupplementPtr camera_frame_supplement_;
   Eigen::Matrix4d _pose_c2w;
+  Eigen::Matrix4d _pose_c2w_static;
 };
 
 class ImageContent : public BaseContent {
  public:
   cv::Mat image_mat_src_;
+};
+
+class LidarContent : public BaseContent {
+ public:
+  LidarContent() {}
+  std::vector<std::shared_ptr<Object>> lidar_objects_;
+  Eigen::Matrix4d _pose_v2w;
 };
 
 class MotionContent : public BaseContent {
@@ -75,17 +86,22 @@ class RadarContent : public BaseContent {
   // RadarRawObstacles radar_raw_front_;
   Eigen::Matrix4d _pose_br2w;
   // RadarRawObstacles radar_raw_back_;
-  std::vector<ObjectPtr> radar_objects_;
+  std::vector<std::shared_ptr<Object>> radar_objects_;
 };
 
 class FusionContent : public BaseContent {
  public:
-  std::vector<ObjectPtr> fused_objects_;
+  std::vector<std::shared_ptr<Object>> fused_objects_;
+};
+
+class LaneContent : public BaseContent {
+ public:
+  LaneObjects lane_objects_;
 };
 
 class GroundTruthContent : public BaseContent {
  public:
-  std::vector<ObjectPtr> gt_objects_;
+  std::vector<std::shared_ptr<Object>> gt_objects_;
 };
 
 class ContentComparison {
@@ -113,59 +129,80 @@ class FrameContent {
   void update_timestamp(double ref);
   void set_image_content(double timestamp, cv::Mat image);
   void set_camera_content(double timestamp, Eigen::Matrix4d pose_c2w,
-                          const std::vector<ObjectPtr>& objects,
+                          Eigen::Matrix4d pose_c2w_static,
+                          const std::vector<std::shared_ptr<Object>>& objects,
                           const CameraFrameSupplement& supplement);
   void set_camera_content(double timestamp, Eigen::Matrix4d pose_c2w,
-                          const std::vector<ObjectPtr>& objects);
+                          const std::vector<std::shared_ptr<Object>>& objects);
 
   void set_radar_content(double timestamp,
-                         const std::vector<ObjectPtr>& objects);
+                         const std::vector<std::shared_ptr<Object>>& objects);
+  void set_lidar_content(double timestamp, Eigen::Matrix4d pose_c2w,
+                         const std::vector<std::shared_ptr<Object>>& objects);
   void set_fusion_content(double timestamp,
-                          const std::vector<ObjectPtr>& objects);
-  void set_gt_content(double timestamp, const std::vector<ObjectPtr>& objects);
-  void set_camera2car_pose(Eigen::Matrix4d pose_cam2velo);
+                          const std::vector<std::shared_ptr<Object>>& objects);
+  void set_lane_content(double timestamp,
+                        const apollo::perception::LaneObjects& objects);
 
-  void set_motion_content(double timestamp, MotionBufferPtr motion_buffer);
+  void set_gt_content(double timestamp,
+                      const std::vector<std::shared_ptr<Object>>& objects);
+  void set_camera2car_pose(const Eigen::Matrix4d& pose_cam2velo);
+
+  void set_motion_content(double timestamp, const MotionBuffer& motion_buffer);
   Eigen::Matrix4d get_opengl_camera_system_pose();
   Eigen::Matrix4d get_camera_to_world_pose();
+  Eigen::Matrix4d get_camera_to_world_pose_static();
   Eigen::Matrix4d get_pose_v2w();
+  Eigen::Matrix4d get_pose_c2w();
   cv::Mat get_camera_image();
 
-  int get_pose_type() {
-    return continuous_type_;
-  }
+  int get_pose_type() { return continuous_type_; }
 
-  void set_pose_type(int type) {
-    continuous_type_ = type;
-  }
+  void set_pose_type(int type) { continuous_type_ = type; }
 
-  std::vector<ObjectPtr> get_camera_objects();
-  std::vector<ObjectPtr> get_radar_objects();
+  std::vector<std::shared_ptr<Object>> get_camera_objects(double* ts = nullptr);
+  std::vector<std::shared_ptr<Object>> get_radar_objects(double* ts = nullptr);
+  std::vector<std::shared_ptr<Object>> get_lidar_objects(double* ts = nullptr);
   double get_visualization_timestamp();
 
-  inline bool has_radar_data() {
-    return radar_caches_.size();
-  }
+  inline bool has_radar_data() { return radar_caches_.size(); }
 
   CameraFrameSupplementPtr get_camera_frame_supplement();
 
-  inline bool has_camera_data() {
-    return camera_caches_.size();
-  }
-  /*   inline void set_camera2velo_pose(const Eigen::Matrix4d& pose) {
+  inline bool has_camera_data() { return camera_caches_.size(); }
+
+  /*
+    inline void set_camera2velo_pose(const Eigen::Matrix4d& pose) {
          _pose_camera2velo = pose;
      }*/
 
   // fused output
-  std::vector<ObjectPtr> get_fused_objects();
+  std::vector<std::shared_ptr<Object>> get_fused_objects(double* ts = nullptr);
   // gt
-  std::vector<ObjectPtr> get_gt_objects();
+  std::vector<std::shared_ptr<Object>> get_gt_objects();
+  // lane objects
+  apollo::perception::LaneObjects get_lane_objects();
 
-  const MotionBuffer get_motion_buffer();
+  MotionBuffer get_motion_buffer();
+
+  void set_lidar_cloud(pcl_util::PointCloudPtr cloud);
+  pcl_util::PointCloudPtr get_cloud();
+  void set_global_offset(const Eigen::Matrix4d& pose_v2w);
+  bool is_global_offset_init();
 
  protected:
   // coordinate transform utilities
-  void offset_object(ObjectPtr object, const Eigen::Vector3d& offset);
+  void offset_object(std::shared_ptr<Object> object,
+                     const Eigen::Vector3d& offset);
+
+  void offset_lidar_object(std::shared_ptr<Object> object,
+                           const Eigen::Vector3d& offset);
+
+  void offset_pointcloud(pcl_util::PointCloud* cloud,
+                         const Eigen::Vector3d& offset);
+
+  void offset_pointcloud(pcl_util::PointDCloud* cloud,
+                         const Eigen::Vector3d& offset);
 
  private:
   const double kEpsilon_ = 1e-6;
@@ -174,39 +211,48 @@ class FrameContent {
     return static_cast<int64_t>(d / kEpsilon_);
   }
 
-  double MapKeyToDouble(const int64_t key) {
-    return key * kEpsilon_;
-  }
+  double MapKeyToDouble(const int64_t key) { return key * kEpsilon_; }
 
   // input
   // 1.radar
   std::map<int64_t, RadarContent> radar_caches_;
   double current_radar_timestamp_;
 
-  // 2.camera
+  // 2.lidar
+  std::map<int64_t, LidarContent> lidar_caches_;
+  double current_lidar_timestamp_;
+
+  // 3.camera
   std::map<int64_t, CameraContent> camera_caches_;
   double current_camera_timestamp_;
 
-  // 3.fusion
+  // 4.fusion
   std::map<int64_t, FusionContent> fusion_caches_;
   double current_fusion_timestamp_;
 
-  // 4.ground truth
+  // 5.ground truth
   std::map<int64_t, GroundTruthContent> gt_caches_;
   double current_gt_timestamp_;
 
-  // 5.image
+  // 6.image
   std::map<int64_t, ImageContent> image_caches_;
   double current_image_timestamp_;
 
-  // 6.motion
+  // 7.motion
   std::map<int64_t, MotionContent> motion_caches_;
   double current_motion_timestamp_;
 
-  Eigen::Vector3d global_offset_;
+  // 8.lane lines
+  std::map<int64_t, LaneContent> lane_caches_;
+  double current_lane_timestamp_;
+
+  Eigen::Vector3d global_offset_ = Eigen::Vector3d::Zero();
   bool global_offset_initialized_;
   int continuous_type_;
-  Eigen::Matrix4d _pose_camera2velo;
+  Eigen::Matrix4d _pose_camera2velo = Eigen::Matrix4d::Identity();
+  Eigen::Matrix4d pose_v2w_ = Eigen::Matrix4d::Identity();
+  Eigen::Matrix4d pose_c2w_ = Eigen::Matrix4d::Identity();
+  pcl_util::PointCloudPtr cloud_;
 
   DISALLOW_COPY_AND_ASSIGN(FrameContent);
 };

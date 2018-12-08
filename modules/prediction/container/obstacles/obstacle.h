@@ -33,7 +33,6 @@
 #include "modules/common/filters/digital_filter.h"
 #include "modules/common/proto/error_code.pb.h"
 #include "modules/perception/proto/perception_obstacle.pb.h"
-#include "modules/prediction/container/obstacles/obstacle_clusters.h"
 #include "modules/prediction/proto/feature.pb.h"
 
 #include "modules/common/math/kalman_filter.h"
@@ -68,8 +67,7 @@ class Obstacle {
    * @param timestamp The timestamp when the perception obstacle was detected.
    */
   void Insert(const perception::PerceptionObstacle& perception_obstacle,
-              const double timestamp,
-              ObstacleClusters* const obstacle_clusters);
+              const double timestamp);
 
   /**
    * @brief Get the type of perception obstacle's type.
@@ -198,6 +196,8 @@ class Obstacle {
   void SetVelocity(const perception::PerceptionObstacle& perception_obstacle,
                    Feature* feature);
 
+  void AdjustHeadingByLane(Feature* feature);
+
   void UpdateVelocity(const double theta, double* velocity_x,
                       double* velocity_y, double* velocity_heading,
                       double* speed);
@@ -221,10 +221,11 @@ class Obstacle {
 
   void SetNearbyLanes(Feature* feature);
 
-  void SetLaneGraphFeature(Feature* feature,
-                           ObstacleClusters* const obstacle_clusters);
+  void SetLaneGraphFeature(Feature* feature);
 
   void SetLanePoints(Feature* feature);
+
+  void SetLaneSequencePath(LaneGraph* const lane_graph);
 
   void InitKFPedestrianTracker(const Feature& feature);
 

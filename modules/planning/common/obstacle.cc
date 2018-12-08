@@ -24,11 +24,12 @@
 #include <cmath>
 #include <string>
 
+#include "modules/common/configs/config_gflags.h"
 #include "modules/common/log.h"
+#include "modules/common/math/linear_interpolation.h"
 #include "modules/common/util/string_util.h"
 #include "modules/common/util/util.h"
 #include "modules/planning/common/planning_gflags.h"
-#include "modules/planning/common/planning_util.h"
 
 namespace apollo {
 namespace planning {
@@ -49,11 +50,16 @@ Obstacle::Obstacle(const std::string& id,
                                perception_obstacle_.theta(),
                                perception_obstacle_.length(),
                                perception_obstacle_.width()) {
-  CHECK(perception_obstacle.polygon_point_size() > 2)
-      << "object " << id << "has less than 3 polygon points";
   std::vector<common::math::Vec2d> polygon_points;
-  for (const auto& point : perception_obstacle.polygon_point()) {
-    polygon_points.emplace_back(point.x(), point.y());
+  if (FLAGS_use_navigation_mode ||
+      perception_obstacle.polygon_point_size() <= 2) {
+    perception_bounding_box_.GetAllCorners(&polygon_points);
+  } else {
+    CHECK(perception_obstacle.polygon_point_size() > 2)
+        << "object " << id << "has less than 3 polygon points";
+    for (const auto& point : perception_obstacle.polygon_point()) {
+      polygon_points.emplace_back(point.x(), point.y());
+    }
   }
   CHECK(common::math::Polygon2d::ComputeConvexHull(polygon_points,
                                                    &perception_polygon_))
@@ -87,8 +93,6 @@ Obstacle::Obstacle(const std::string& id,
         common::util::DistanceXY(prev.path_point(), cur.path_point());
     trajectory_points[i].mutable_path_point()->set_s(cumulative_s);
   }
-  speed_ = std::hypot(perception_obstacle.velocity().x(),
-                      perception_obstacle.velocity().y());
 }
 
 double Obstacle::Speed() const { return speed_; }
@@ -149,7 +153,8 @@ common::TrajectoryPoint Obstacle::GetPointAtTime(
     } else if (it_lower == points.end()) {
       return *points.rbegin();
     }
-    return util::interpolate(*(it_lower - 1), *it_lower, relative_time);
+    return common::math::InterpolateUsingLinearApproximation(
+        *(it_lower - 1), *it_lower, relative_time);
   }
 }
 

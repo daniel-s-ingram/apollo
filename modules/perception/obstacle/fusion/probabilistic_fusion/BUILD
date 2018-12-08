@@ -1,5 +1,4 @@
 load("//tools:cpplint.bzl", "cpplint")
-load("//tools:cpplint.bzl", "cpplint")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -18,6 +17,7 @@ cc_library(
         "pbf_track_manager.cc",
         "pbf_track_object_distance.cc",
         "probabilistic_fusion.cc",
+        "dst_evidence.cc"
     ],
     hdrs = [
         "pbf_base_motion_fusion.h",
@@ -33,6 +33,8 @@ cc_library(
         "pbf_track_manager.h",
         "pbf_track_object_distance.h",
         "probabilistic_fusion.h",
+        "dst_evidence.h",
+        "dst_evidence_initiator.h"
     ],
     data = [
         "//modules/perception/conf:perception_config",
@@ -42,11 +44,13 @@ cc_library(
         "//modules/common:log",
         "//modules/common/configs:config_gflags",
         "//modules/perception/common",
+        "//modules/perception/onboard",
         "//modules/perception/lib/config_manager",
         "//modules/perception/obstacle/base",
         "//modules/perception/obstacle/common",
         "//modules/perception/obstacle/fusion/interface",
         "//modules/perception/obstacle/onboard:hdmapinput",
+        "//modules/perception/proto:probabilistic_fusion_config_lib_proto",
         "@eigen",
         "@pcl",
     ],

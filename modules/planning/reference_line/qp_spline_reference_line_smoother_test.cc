@@ -36,7 +36,7 @@ namespace planning {
 class QpSplineReferenceLineSmootherTest : public ::testing::Test {
  public:
   virtual void SetUp() {
-    config_.set_spline_order(5);
+    config_.mutable_qp_spline()->set_spline_order(5);
     smoother_.reset(new QpSplineReferenceLineSmoother(config_));
     hdmap_.LoadMapFromFile(map_file);
     const std::string lane_id = "1_-1";
@@ -53,7 +53,7 @@ class QpSplineReferenceLineSmootherTest : public ::testing::Test {
       std::vector<hdmap::LaneWaypoint> waypoint;
       waypoint.emplace_back(lane_info_ptr, accumulate_s[i]);
       hdmap::MapPathPoint map_path_point(points[i], headings[i], waypoint);
-      ref_points.emplace_back(map_path_point, 0.0, 0.0, -2.0, 2.0);
+      ref_points.emplace_back(map_path_point, 0.0, 0.0);
     }
     reference_line_.reset(new ReferenceLine(ref_points));
     vehicle_position_ = points[0];
@@ -96,7 +96,7 @@ TEST_F(QpSplineReferenceLineSmootherTest, smooth) {
   anchor_points.back().lateral_bound = 1e-6;
   smoother_->SetAnchorPoints(anchor_points);
   EXPECT_TRUE(smoother_->Smooth(*reference_line_, &smoothed_reference_line));
-  EXPECT_FLOAT_EQ(152.54079, smoothed_reference_line.Length());
+  EXPECT_NEAR(152.0, smoothed_reference_line.Length(), 1.0);
 }
 
 }  // namespace planning

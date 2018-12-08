@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 ###############################################################################
-# Copyright 2017 The Apollo Authors. All Rights Reserved.
+# Copyright 2018 The Apollo Authors. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -20,31 +20,6 @@
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
 source "${DIR}/apollo_base.sh"
-
 # run function from apollo_base.sh
 # run command_name module_name
-function start() {
-	echo "start"
-	python modules/tools/navigation/perception_adapter/perception_adaper.py &
-}
-
-function stop() {
-    echo "stop"
-    pkill -f perception_adaper.py
-}
-
-case $1 in                                                                                          
-start)                                                                                              
-    start                                                                                           
-    ;;                                                                                              
-help)                                                                                               
-    echo "$0 start|stop|help"                                                             
-    ;;                                                                                              
-stop)                                                                                               
-    stop                                                                                       
-    ;;                                                                                              
-*)                                                                                                  
-    stop                                                                                           
-    start                                                                                           
-    ;;
-esac
+run perception "$@" --flagfile=/apollo/modules/perception/conf/perception_lowcost.conf

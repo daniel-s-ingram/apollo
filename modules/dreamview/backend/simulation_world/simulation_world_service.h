@@ -72,9 +72,7 @@ class SimulationWorldService {
    * @brief Get a read-only view of the SimulationWorld.
    * @return Constant reference to the SimulationWorld object.
    */
-  inline const SimulationWorld &world() const {
-    return world_;
-  }
+  inline const SimulationWorld &world() const { return world_; }
 
   /**
    * @brief Returns the json representation of the SimulationWorld object.
@@ -112,20 +110,14 @@ class SimulationWorldService {
   /**
    * @brief Sets the flag to clear the owned simulation world object.
    */
-  void SetToClear() {
-    to_clear_ = true;
-  }
+  void SetToClear() { to_clear_ = true; }
 
   /**
    * @brief Check whether the SimulationWorld object has enough information.
    * The backend won't push the SimulationWorld to frontend if it is not ready.
    * @return True if the object is ready to push.
    */
-  bool ReadyToPush() const {
-    return world_.has_auto_driving_car() &&
-           world_.auto_driving_car().has_position_x() &&
-           world_.auto_driving_car().has_position_y();
-  }
+  bool ReadyToPush() const { return ready_to_push_.load(); }
 
   /**
    * @brief Publish message to the monitor
@@ -172,9 +164,23 @@ class SimulationWorldService {
   void UpdateMainStopDecision(
       const apollo::planning::MainDecision &main_decision,
       double update_timestamp_sec, Object *world_main_stop);
+
   template <typename MainDecision>
   void UpdateMainChangeLaneDecision(const MainDecision &decision,
-                                    Object *world_main_decision);
+                                    Object *world_main_decision) {
+    if (decision.has_change_lane_type() &&
+        (decision.change_lane_type() == apollo::routing::ChangeLaneType::LEFT ||
+         decision.change_lane_type() ==
+             apollo::routing::ChangeLaneType::RIGHT)) {
+      auto *change_lane_decision = world_main_decision->add_decision();
+      change_lane_decision->set_change_lane_type(decision.change_lane_type());
+
+      const auto &adc = world_.auto_driving_car();
+      change_lane_decision->set_position_x(adc.position_x());
+      change_lane_decision->set_position_y(adc.position_y());
+      change_lane_decision->set_heading(adc.heading());
+    }
+  }
 
   void CreatePredictionTrajectory(
       const apollo::prediction::PredictionObstacle &obstacle,
@@ -193,10 +199,12 @@ class SimulationWorldService {
    */
   template <typename AdapterType>
   void UpdateWithLatestObserved(const std::string &adapter_name,
-                                AdapterType *adapter) {
+                                AdapterType *adapter, bool logging = true) {
     if (adapter->Empty()) {
-      AINFO_EVERY(100) << adapter_name
-                       << " adapter has not received any data yet.";
+      if (logging) {
+        AINFO_EVERY(100) << adapter_name
+                         << " adapter has not received any data yet.";
+      }
       return;
     }
 
@@ -212,7 +220,24 @@ class SimulationWorldService {
   template <typename Points>
   void DownsampleSpeedPointsByInterval(const Points &points,
                                        size_t downsampleInterval,
-                                       Points *downsampled_points);
+                                       Points *downsampled_points) {
+    if (points.size() == 0) {
+      return;
+    }
+
+    for (int i = 0; i < points.size() - 1; i += downsampleInterval) {
+      auto *point = downsampled_points->Add();
+      point->set_s(points[i].s());
+      point->set_t(points[i].t());
+      point->set_v(points[i].v());
+    }
+
+    // add the last point
+    auto *point = downsampled_points->Add();
+    point->set_s(points[points.size() - 1].s());
+    point->set_t(points[points.size() - 1].t());
+    point->set_v(points[points.size() - 1].v());
+  }
 
   // The underlying SimulationWorld object, owned by the
   // SimulationWorldService instance.
@@ -237,6 +262,9 @@ class SimulationWorldService {
   // Relative map used/retrieved in navigation mode
   apollo::hdmap::Map relative_map_;
 
+  // Whether the sim_world is ready to push to frontend
+  std::atomic<bool> ready_to_push_;
+
   FRIEND_TEST(SimulationWorldServiceTest, UpdateMonitorSuccess);
   FRIEND_TEST(SimulationWorldServiceTest, UpdateMonitorRemove);
   FRIEND_TEST(SimulationWorldServiceTest, UpdateMonitorTruncate);
@@ -247,6 +275,10 @@ class SimulationWorldService {
   FRIEND_TEST(SimulationWorldServiceTest, UpdateDecision);
   FRIEND_TEST(SimulationWorldServiceTest, UpdatePrediction);
   FRIEND_TEST(SimulationWorldServiceTest, UpdateRouting);
+  FRIEND_TEST(SimulationWorldServiceTest, UpdateGps);
+  FRIEND_TEST(SimulationWorldServiceTest, UpdateControlCommandWithSimpleLonLat);
+  FRIEND_TEST(SimulationWorldServiceTest, UpdateControlCommandWithSimpleMpc);
+  FRIEND_TEST(SimulationWorldServiceTest, DownsampleSpeedPointsByInterval);
 };
 
 }  // namespace dreamview

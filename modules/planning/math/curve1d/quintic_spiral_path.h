@@ -24,7 +24,7 @@
 #include <cmath>
 #include <utility>
 
-#include "glog/logging.h"
+#include "modules/common/log.h"
 #include "modules/common/math/angle.h"
 #include "modules/common/math/integral.h"
 #include "modules/planning/math/curve1d/quintic_polynomial_curve1d.h"
@@ -101,6 +101,12 @@ class QuinticSpiralPath : public QuinticPolynomialCurve1d {
 
   double DeriveKappaDerivative(const std::size_t param_index,
                                const double ratio) const;
+
+  double DeriveDKappaDerivative(const std::size_t param_index,
+                                const double ratio) const;
+
+  double DeriveD2KappaDerivative(const std::size_t param_index,
+                                 const double r) const;
 
   static const std::size_t THETA0 = 0;
   static const std::size_t KAPPA0 = 1;

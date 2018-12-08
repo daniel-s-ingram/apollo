@@ -24,7 +24,7 @@ cc_library(
         "//modules/common",
         "//modules/common:apollo_app",
         "//modules/common/adapters:adapter_manager",
-        "//modules/common/math:vec2d",
+        "//modules/common/math:geometry",
         "//modules/common/monitor_log",
         "//modules/common/status",
         "//modules/common/util",
@@ -61,6 +61,30 @@ cc_binary(
     deps = [
         ":relative_map_lib",
         "//external:gflags",
+    ],
+)
+
+filegroup(
+    name = "testdata",
+    srcs = glob([
+        "testdata/**",
+    ]),
+)
+
+cc_test(
+    name = "navigation_lane_test",
+    size = "small",
+    srcs = [
+        "navigation_lane_test.cc",
+    ], 
+    data = [
+        ":testdata",
+    ],   
+    deps = [
+        ":relative_map_lib",
+        "//modules/common",        
+        "//third_party/json",
+        "@gtest//:main",
     ],
 )
 

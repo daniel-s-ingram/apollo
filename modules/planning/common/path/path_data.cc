@@ -28,13 +28,14 @@
 #include "modules/common/math/cartesian_frenet_conversion.h"
 #include "modules/common/util/string_util.h"
 #include "modules/common/util/util.h"
+#include "modules/planning/common/planning_context.h"
 #include "modules/planning/common/planning_gflags.h"
-#include "modules/planning/common/planning_util.h"
 
 namespace apollo {
 namespace planning {
 
 using apollo::common::SLPoint;
+using apollo::common::math::CartesianFrenetConverter;
 using apollo::common::math::Vec2d;
 
 bool PathData::SetDiscretizedPath(const DiscretizedPath &path) {
@@ -94,7 +95,7 @@ void PathData::SetReferenceLine(const ReferenceLine *reference_line) {
 
 bool PathData::GetPathPointWithPathS(
     const double s, common::PathPoint *const path_point) const {
-  *path_point = discretized_path_.EvaluateUsingLinearApproximation(s);
+  *path_point = discretized_path_.Evaluate(s);
   return true;
 }
 
@@ -135,8 +136,7 @@ bool PathData::GetPathPointWithRefS(const double ref_s,
       discretized_path_.path_points().at(index).s() +
       r * (discretized_path_.path_points().at(index + 1).s() -
            discretized_path_.path_points().at(index).s());
-  path_point->CopyFrom(
-      discretized_path_.EvaluateUsingLinearApproximation(discretized_path_s));
+  path_point->CopyFrom(discretized_path_.Evaluate(discretized_path_s));
 
   return true;
 }
@@ -154,8 +154,9 @@ std::string PathData::DebugString() const {
                static_cast<size_t>(FLAGS_trajectory_point_num_for_debug));
 
   return apollo::common::util::StrCat(
-      "[\n", apollo::common::util::PrintDebugStringIter(
-                 path_points.begin(), path_points.begin() + limit, ",\n"),
+      "[\n",
+      apollo::common::util::PrintDebugStringIter(
+          path_points.begin(), path_points.begin() + limit, ",\n"),
       "]\n");
 }
 

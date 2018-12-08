@@ -17,16 +17,18 @@
 #ifndef MODULES_PERCEPTION_OBSTACLE_ONBOARD_VISUALIZATION_SUBNODE_H_
 #define MODULES_PERCEPTION_OBSTACLE_ONBOARD_VISUALIZATION_SUBNODE_H_
 
-#include <map>
 #include <memory>
 #include <string>
 #include <vector>
 #include "modules/perception/obstacle/camera/visualizer/base_visualizer.h"
-#include "modules/perception/obstacle/camera/visualizer/gl_fusion_visualizer.h"
 #include "modules/perception/obstacle/camera/visualizer/frame_content.h"
+#include "modules/perception/obstacle/camera/visualizer/gl_fusion_visualizer.h"
 #include "modules/perception/obstacle/onboard/camera_shared_data.h"
 #include "modules/perception/obstacle/onboard/fusion_shared_data.h"
+#include "modules/perception/obstacle/onboard/lane_shared_data.h"
+#include "modules/perception/obstacle/onboard/motion_service.h"
 #include "modules/perception/obstacle/onboard/object_shared_data.h"
+#include "modules/perception/obstacle/onboard/scene_shared_data.h"
 #include "modules/perception/onboard/subnode.h"
 #include "modules/perception/onboard/subnode_helper.h"
 
@@ -48,22 +50,35 @@ class VisualizationSubnode : public Subnode {
 
  private:
   bool InitStream();
+
   bool SubscribeEvents(const EventMeta& event_meta,
                        std::vector<Event>* events) const;
 
-  // void get_frame_data(const std::string& device_id,
-  //                     const std::string& data_key,
-  //                     FrameContent* content, double timestamp);
-  void GetFrameData(const Event& event, const std::string& device_id,
-                    const std::string& data_key, const double timestamp,
-                    FrameContent* content);
+  void SetFrameContent(const Event& event, const std::string& device_id,
+                       const std::string& data_key, const double timestamp,
+                       FrameContent* content);
+  void SetFusionContent(const std::string& data_key, FrameContent* content,
+                        double timestamp);
+  void SetCameraContent(const std::string& data_key, FrameContent* content,
+                        double timestamp);
+  void SetRadarContent(const std::string& data_key, FrameContent* content,
+                       double timestamp);
+  void SetLaneContent(const std::string& data_key, FrameContent* content,
+                      double timestamp);
+  void SetLidarContent(const std::string& data_key, FrameContent* content,
+                       double timestamp);
 
   RadarObjectData* radar_object_data_ = nullptr;
   CameraObjectData* camera_object_data_ = nullptr;
   CIPVObjectData* cipv_object_data_ = nullptr;
   CameraSharedData* camera_shared_data_ = nullptr;
+  LaneSharedData* lane_shared_data_ = nullptr;
   FusionSharedData* fusion_data_ = nullptr;
+  LidarObjectData* lidar_object_data_ = nullptr;
+  SceneSharedData* scene_shared_data_ = nullptr;
+
   std::unique_ptr<BaseVisualizer> frame_visualizer_;
+  MotionService* motion_service_ = nullptr;
   FrameContent content_;
 
   EventID vis_driven_event_id_;
@@ -72,6 +87,8 @@ class VisualizationSubnode : public Subnode {
   EventID fusion_event_id_;
   EventID motion_event_id_;
   EventID cipv_event_id_;
+  EventID lane_event_id_;
+  EventID lidar_event_id_;
 
   //    MotionBufferPtr motion_buffer_;
   Eigen::Matrix4d camera_to_car_pose_;

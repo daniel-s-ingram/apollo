@@ -14,6 +14,7 @@
  * limitations under the License.
  *****************************************************************************/
 
+#include <algorithm>
 #include <cmath>
 #include <utility>
 #include <vector>
@@ -31,20 +32,13 @@ namespace apollo {
 namespace perception {
 
 // @brief: convert angle from the range of [-pi, pi] to [0, 2*pi]
-inline void RectAngle(ScalarType* theta) {
-  if (theta == NULL) {
-    return;
-  }
-  if (*theta < 0) {
-    (*theta) += static_cast<ScalarType>(2 * M_PI);
-  }
-}
+void RectAngle(ScalarType *theta);
 
 // @brief: fit polynomial function with QR decomposition (using Eigen 3)
 template <typename T = ScalarType>
-bool PolyFit(const std::vector<Eigen::Matrix<T, 2, 1>>& pos_vec,
-             const int& order, Eigen::Matrix<T, MAX_POLY_ORDER + 1, 1>* coeff,
-             const bool& is_x_axis = true) {
+bool PolyFit(const std::vector<Eigen::Matrix<T, 2, 1>> &pos_vec,
+             const int order, Eigen::Matrix<T, MAX_POLY_ORDER + 1, 1> *coeff,
+             const bool &is_x_axis = true) {
   if (coeff == NULL) {
     AERROR << "The coefficient pointer is NULL.";
     return false;
@@ -67,8 +61,11 @@ bool PolyFit(const std::vector<Eigen::Matrix<T, 2, 1>>& pos_vec,
   Eigen::Matrix<T, Eigen::Dynamic, 1> y(n);
   Eigen::Matrix<T, Eigen::Dynamic, 1> result;
   for (int i = 0; i < n; ++i) {
+    float base = is_x_axis ? pos_vec[i].x() : pos_vec[i].y();
+    float p_b_j = 1.0;
     for (int j = 0; j <= order; ++j) {
-      A(i, j) = std::pow(is_x_axis ? pos_vec[i].x() : pos_vec[i].y(), j);
+      A(i, j) = p_b_j;
+      p_b_j *= base;
     }
     y(i) = is_x_axis ? pos_vec[i].y() : pos_vec[i].x();
   }
@@ -86,8 +83,8 @@ bool PolyFit(const std::vector<Eigen::Matrix<T, 2, 1>>& pos_vec,
 
 // @brief: evaluate y value of given x for a polynomial function
 template <typename T = ScalarType>
-T PolyEval(const T& x, const int& order,
-           const Eigen::Matrix<T, MAX_POLY_ORDER + 1, 1>& coeff) {
+T PolyEval(const T &x, const int order,
+           const Eigen::Matrix<T, MAX_POLY_ORDER + 1, 1> &coeff) {
   int poly_order = order;
   if (order > MAX_POLY_ORDER) {
     AERROR << "the order of polynomial function must be smaller than "
@@ -97,12 +94,178 @@ T PolyEval(const T& x, const int& order,
   }
 
   T y = static_cast<T>(0);
+  float p_x_j = 1.0;
   for (int j = 0; j <= poly_order; ++j) {
-    y += coeff(j) * std::pow(x, j);
+    y += coeff(j) * p_x_j;
+    p_x_j *= x;
   }
 
   return y;
 }
+
+// @brief: evaluating y value of given x for a third-order polynomial function
+template <typename T = float>
+T GetPolyValue(T a, T b, T c, T d, T x) {
+  T y = d;
+  T v = x;
+  y += (c * v);
+  v *= x;
+  y += (b * v);
+  v *= x;
+  y += (a * v);
+  return y;
+}
+
+template <typename T = ScalarType>
+bool IterativeFitting(std::vector<Eigen::Matrix<T, 2, 1>> *pos_vec,
+             const int order, Eigen::Matrix<T, MAX_POLY_ORDER + 1, 1> *coeff,
+             const bool &is_x_axis = true,
+             const int N = 5, double inlier_thres = 0.1) {
+  if (coeff == nullptr) {
+    AERROR << "The coefficient pointer is NULL.";
+    return false;
+  }
+
+  if (order > MAX_POLY_ORDER) {
+    AERROR << "The order of polynomial must be smaller than " << MAX_POLY_ORDER;
+    return false;
+  }
+
+  int n = static_cast<int>(pos_vec->size());
+  if (n <= order) {
+    AERROR << "The number of points should be larger than the order. #points = "
+           << pos_vec->size();
+    return false;
+  }
+
+  for (int l = 0; l < N; ++l) {
+    if (pos_vec->size() < minNumPoints) break;
+    PolyFit(*pos_vec, std::min(l + 2, order), coeff);
+    int m = pos_vec->size();
+
+    for (int i = 0; i < m; ++i) {
+      double x = (*pos_vec)[i](0);
+      double y = PolyEval(x, order, *coeff);
+      if (std::abs(y - (*pos_vec)[i](1)) > inlier_thres) {
+        pos_vec->erase(pos_vec->begin() + i);
+        --i;
+        --m;
+      }
+    }
+    inlier_thres /= 2;
+  }
+  if (pos_vec->size() >= minNumPoints) {
+    if (std::abs((*coeff)(3)) <= 5e-5)
+      PolyFit(*pos_vec, order, coeff);
+    else
+      PolyFit(*pos_vec, order - 1, coeff);
+  }
+
+  return true;
+}
+
+template <typename T = ScalarType>
+bool RansacFitting(std::vector<Eigen::Matrix<T, 2, 1>> *pos_vec,
+             Eigen::Matrix<T, MAX_POLY_ORDER + 1, 1> *coeff,
+             const int max_iters = 100,
+             const int N = 5, float inlier_thres = 0.1) {
+  if (coeff == NULL) {
+    AERROR << "The coefficient pointer is NULL.";
+    return false;
+  }
+
+  int n = static_cast<int>(pos_vec->size());
+  int q1 = static_cast<int>(n/4);
+  int q2 = static_cast<int>(n/2);
+  int q3 = static_cast<int>(n*3/4);
+  if (n < N) {
+    AERROR << "The number of points should be larger than the order. #points = "
+           << pos_vec->size();
+    return false;
+  }
+
+  std::vector<int> index(3, 0);
+  int max_inliers = 0;
+  float min_residual = FLT_MAX;
+  float early_stop_ratio = 0.95;
+  float good_lane_ratio = 0.666;
+  for (int j = 0; j < max_iters; ++j) {
+    index[0] = std::rand() % q2;
+    index[1] = q2 + std::rand() % q1;
+    index[2] = q3 + std::rand() % q1;
+
+    Eigen::Matrix<T, 3, 3> matA;
+    matA << (*pos_vec)[index[0]](0)*(*pos_vec)[index[0]](0),
+            (*pos_vec)[index[0]](0), 1,
+            (*pos_vec)[index[1]](0)*(*pos_vec)[index[1]](0),
+            (*pos_vec)[index[1]](0), 1,
+            (*pos_vec)[index[2]](0)*(*pos_vec)[index[2]](0),
+            (*pos_vec)[index[2]](0), 1;
+
+    Eigen::Matrix<T, 3, 1> matB;
+    matB << (*pos_vec)[index[0]](1),
+            (*pos_vec)[index[1]](1),
+            (*pos_vec)[index[2]](1);
+    Eigen::Matrix<T, 3, 1> c = matA.colPivHouseholderQr().solve(matB);
+
+    int num_inliers = 0;
+    float residual = 0;
+    float y = 0;
+    for (int i = 0; i < n; ++i) {
+      y = (*pos_vec)[i](0)*(*pos_vec)[i](0)*c(0) + (*pos_vec)[i](0)*c(1) + c(2);
+      if (std::abs(y - (*pos_vec)[i](1)) <= inlier_thres) ++num_inliers;
+      residual += std::abs(y - (*pos_vec)[i](1));
+    }
+
+    if (num_inliers > max_inliers ||
+      (num_inliers == max_inliers && residual < min_residual)) {
+      (*coeff)(3) = 0;
+      (*coeff)(2) = c(0);
+      (*coeff)(1) = c(1);
+      (*coeff)(0) = c(2);
+      max_inliers = num_inliers;
+      min_residual = residual;
+    }
+
+    if (max_inliers > early_stop_ratio*n) break;
+  }
+  if (static_cast<float>(max_inliers)/n < good_lane_ratio) {
+    return false;
+  } else {
+    std::vector<Eigen::Matrix<T, 2, 1>> tmp = *pos_vec;
+    pos_vec->clear();
+    for (int i = 0; i < n; ++i) {
+      float y = tmp[i](0)*tmp[i](0)*(*coeff)(2) +
+                  tmp[i](0)*(*coeff)(1) + (*coeff)(0);
+      if (std::abs(y - tmp[i](1)) <= inlier_thres) pos_vec->push_back(tmp[i]);
+    }
+  }
+  return true;
+}
+
+// @brief: non mask class which is used for filtering out the markers inside the
+// polygon mask
+class NonMask {
+ public:
+  NonMask() {}
+  explicit NonMask(const size_t n) { polygon_.reserve(n); }
+
+  void AddPolygonPoint(const ScalarType &x, const ScalarType &y);
+  bool IsInsideMask(const Vector2D &p) const;
+
+ protected:
+  int ComputeOrientation(const Vector2D &p1, const Vector2D &p2,
+                         const Vector2D &q) const;
+  bool IsColinear(const Vector2D &p1, const Vector2D &p2,
+                  const Vector2D &q) const;
+  bool IsOnLineSegmentWhenColinear(const Vector2D &p1, const Vector2D &p2,
+                                   const Vector2D &q) const;
+  bool IsLineSegmentIntersect(const Vector2D &p1, const Vector2D &p2,
+                              const Vector2D &p3, const Vector2D &p4) const;
+
+ private:
+  std::vector<Vector2D> polygon_;
+};
 
 }  // namespace perception
 }  // namespace apollo

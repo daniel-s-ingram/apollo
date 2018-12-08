@@ -27,18 +27,23 @@
 #include <list>
 #include <memory>
 #include <mutex>
+#include <queue>
 #include <string>
 #include <thread>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
+
+#include "modules/common/vehicle_state/proto/vehicle_state.pb.h"
+#include "modules/map/relative_map/proto/navigation.pb.h"
+#include "modules/planning/proto/planning_config.pb.h"
 
 #include "modules/common/util/factory.h"
 #include "modules/common/util/util.h"
-#include "modules/common/vehicle_state/proto/vehicle_state.pb.h"
 #include "modules/map/pnc_map/pnc_map.h"
-#include "modules/map/relative_map/proto/navigation.pb.h"
+#include "modules/planning/common/indexed_queue.h"
 #include "modules/planning/math/smoothing_spline/spline_2d_solver.h"
-#include "modules/planning/proto/planning_config.pb.h"
+#include "modules/planning/reference_line/cos_theta_reference_line_smoother.h"
 #include "modules/planning/reference_line/qp_spline_reference_line_smoother.h"
 #include "modules/planning/reference_line/reference_line.h"
 #include "modules/planning/reference_line/spiral_reference_line_smoother.h"
@@ -57,14 +62,13 @@ namespace planning {
  */
 class ReferenceLineProvider {
  public:
+  ReferenceLineProvider() = default;
+  explicit ReferenceLineProvider(const hdmap::HDMap* base_map);
+
   /**
    * @brief Default destructor.
    */
   ~ReferenceLineProvider();
-
-  ReferenceLineProvider(
-      const hdmap::HDMap* base_map,
-      PlanningConfig::ReferenceLineSmootherType smoother_type);
 
   bool UpdateRoutingResponse(const routing::RoutingResponse& routing);
 
@@ -80,8 +84,6 @@ class ReferenceLineProvider {
   double LastTimeDelay();
 
   std::vector<routing::LaneWaypoint> FutureRouteWaypoints();
-
-  static double LookForwardDistance(const common::VehicleState& state);
 
  private:
   /**
@@ -106,8 +108,6 @@ class ReferenceLineProvider {
   void PrioritzeChangeLane(std::list<hdmap::RouteSegments>* route_segments);
 
   bool CreateRouteSegments(const common::VehicleState& vehicle_state,
-                           const double look_forward_distance,
-                           const double look_backward_distance,
                            std::list<hdmap::RouteSegments>* segments);
 
   bool IsReferenceLineSmoothValid(const ReferenceLine& raw,
@@ -139,10 +139,17 @@ class ReferenceLineProvider {
 
   bool GetReferenceLinesFromRelativeMap(
       const relative_map::MapMsg& relative_map,
-      std::list<ReferenceLine>* reference_line,
+      std::list<ReferenceLine>* reference_lines,
       std::list<hdmap::RouteSegments>* segments);
 
-  static void RegisterSmoothers();
+  /**
+   * @brief This function get adc lane info from navigation path and map
+   * by vehicle state.
+   */
+  bool GetNearestWayPointFromNavigationPath(
+      const common::VehicleState& state,
+      const std::unordered_set<std::string>& navigation_lane_ids,
+      hdmap::LaneWaypoint* waypoint);
 
  private:
   bool is_initialized_ = false;
@@ -167,10 +174,8 @@ class ReferenceLineProvider {
   std::list<hdmap::RouteSegments> route_segments_;
   double last_calculation_time_ = 0.0;
 
-  static apollo::common::util::Factory<
-      PlanningConfig::ReferenceLineSmootherType, ReferenceLineSmoother,
-      ReferenceLineSmoother* (*)(const ReferenceLineSmootherConfig& config)>
-      s_smoother_factory_;
+  std::queue<std::list<ReferenceLine>> reference_line_history_;
+  std::queue<std::list<hdmap::RouteSegments>> route_segments_history_;
 };
 
 }  // namespace planning

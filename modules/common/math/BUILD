@@ -5,86 +5,44 @@ package(default_visibility = ["//visibility:public"])
 cc_library(
     name = "math",
     deps = [
-        ":aabox2d",
-        ":aaboxkdtree2d",
         ":angle",
-        ":box2d",
         ":cartesian_frenet_conversion",
         ":euler_angles_zxy",
         ":factorial",
+        ":geometry",
         ":integral",
         ":kalman_filter",
-        ":line_segment2d",
         ":linear_interpolation",
         ":lqr",
-        ":math_utils",
         ":mpc",
-        ":polygon2d",
         ":quaternion",
         ":search",
         ":sin_table",
-        ":vec2d",
     ],
 )
 
 cc_library(
-    name = "math_utils",
+    name = "geometry",
     srcs = [
+        "aabox2d.cc",
+        "box2d.cc",
+        "line_segment2d.cc",
         "math_utils.cc",
-    ],
-    hdrs = [
         "math_utils.h",
-    ],
-    deps = [
-        ":vec2d",
-        "//modules/common:log",
-    ],
-)
-
-cc_library(
-    name = "vec2d",
-    srcs = [
+        "polygon2d.cc",
         "vec2d.cc",
     ],
     hdrs = [
+        "aabox2d.h",
+        "aaboxkdtree2d.h",
+        "box2d.h",
+        "line_segment2d.h",
+        "polygon2d.h",
         "vec2d.h",
     ],
     deps = [
         "//modules/common:log",
         "//modules/common/util:string_util",
-    ],
-)
-
-cc_library(
-    name = "aabox2d",
-    srcs = [
-        "aabox2d.cc",
-    ],
-    hdrs = [
-        "aabox2d.h",
-    ],
-    deps = [
-        ":math_utils",
-        ":vec2d",
-        "//modules/common:log",
-    ],
-)
-
-cc_library(
-    name = "box2d",
-    srcs = [
-        "box2d.cc",
-    ],
-    hdrs = [
-        "box2d.h",
-    ],
-    deps = [
-        ":aabox2d",
-        ":line_segment2d",
-        ":math_utils",
-        ":polygon2d",
-        ":vec2d",
-        "//modules/common:log",
     ],
 )
 
@@ -117,22 +75,8 @@ cc_library(
         "euler_angles_zxy.h",
     ],
     deps = [
-        ":math_utils",
-        ":vec2d",
+        ":geometry",
         "@eigen",
-    ],
-)
-
-cc_library(
-    name = "aaboxkdtree2d",
-    hdrs = [
-        "aaboxkdtree2d.h",
-    ],
-    deps = [
-        ":aabox2d",
-        ":math_utils",
-        ":vec2d",
-        "//modules/common:log",
     ],
 )
 
@@ -143,8 +87,7 @@ cc_library(
     ],
     deps = [
         ":euler_angles_zxy",
-        ":math_utils",
-        ":vec2d",
+        ":geometry",
         "//modules/common/proto:common_proto",
         "@eigen",
     ],
@@ -152,11 +95,28 @@ cc_library(
 
 cc_library(
     name = "matrix_operations",
+    srcs = [
+        "matrix_operations.cc",
+    ],
     hdrs = [
         "matrix_operations.h",
     ],
     deps = [
         "@eigen",
+        "//modules/common:log",
+    ],
+)
+
+
+cc_test(
+    name = "matrix_operations_test",
+    size = "small",
+    srcs = [
+        "matrix_operations_test.cc",
+    ],
+    deps = [
+        ":matrix_operations",
+        "@gtest//:main",
     ],
 )
 
@@ -173,12 +133,14 @@ cc_library(
 )
 
 cc_library(
-    name = "kalman_filter_1d",
-    srcs = ["kalman_filter_1d.cc"],
-    hdrs = ["kalman_filter_1d.h"],
+    name = "extended_kalman_filter",
+    hdrs = [
+        "extended_kalman_filter.h",
+    ],
     deps = [
+        "//modules/common:log",
+        "//modules/common/math:matrix_operations",
         "@eigen",
-        "@yaml_cpp//:yaml",
     ],
 )
 
@@ -218,39 +180,6 @@ cc_test(
 )
 
 cc_library(
-    name = "line_segment2d",
-    srcs = [
-        "line_segment2d.cc",
-    ],
-    hdrs = [
-        "line_segment2d.h",
-    ],
-    deps = [
-        "math_utils",
-        ":vec2d",
-        "//modules/common:log",
-    ],
-)
-
-cc_library(
-    name = "polygon2d",
-    srcs = [
-        "polygon2d.cc",
-    ],
-    hdrs = [
-        "box2d.h",
-        "polygon2d.h",
-    ],
-    deps = [
-        ":aabox2d",
-        ":line_segment2d",
-        ":math_utils",
-        ":vec2d",
-        "//modules/common:log",
-    ],
-)
-
-cc_library(
     name = "search",
     srcs = [
         "search.cc",
@@ -271,7 +200,23 @@ cc_library(
         "linear_interpolation.h",
     ],
     deps = [
-        ":math_utils",
+        ":geometry",
+        "//modules/common/proto:pnc_point_proto",
+    ],
+)
+
+cc_library(
+    name = "nonlinear_interpolation",
+    srcs = [
+        "nonlinear_interpolation.cc",
+    ],
+    hdrs = [
+        "nonlinear_interpolation.h",
+    ],
+    deps = [
+        ":geometry",
+        ":hermite_spline",
+        ":integral",
         "//modules/common/proto:pnc_point_proto",
     ],
 )
@@ -328,10 +273,19 @@ cc_library(
         "cartesian_frenet_conversion.h",
     ],
     deps = [
+        ":geometry",
         "//modules/common:log",
-        "//modules/common/math:math_utils",
-        "//modules/common/math:vec2d",
         "@eigen",
+    ],
+)
+
+cc_library(
+    name = "hermite_spline",
+    hdrs = [
+        "hermite_spline.h",
+    ],
+    deps = [
+        "//modules/common:log",
     ],
 )
 
@@ -356,7 +310,7 @@ cc_test(
         "math_utils_test.cc",
     ],
     deps = [
-        ":math_utils",
+        ":geometry",
         "@gtest//:main",
     ],
 )
@@ -406,7 +360,7 @@ cc_test(
         "vec2d_test.cc",
     ],
     deps = [
-        ":vec2d",
+        ":geometry",
         "@gtest//:main",
     ],
 )
@@ -442,7 +396,7 @@ cc_test(
         "aabox2d_test.cc",
     ],
     deps = [
-        ":aabox2d",
+        ":geometry",
         "@gtest//:main",
     ],
 )
@@ -454,9 +408,7 @@ cc_test(
         "aaboxkdtree2d_test.cc",
     ],
     deps = [
-        ":aaboxkdtree2d",
-        ":line_segment2d",
-        ":math_utils",
+        ":geometry",
         "@gtest//:main",
     ],
 )
@@ -468,8 +420,7 @@ cc_test(
         "box2d_test.cc",
     ],
     deps = [
-        ":box2d",
-        ":math_utils",
+        ":geometry",
         "@gtest//:main",
     ],
 )
@@ -481,10 +432,7 @@ cc_test(
         "polygon2d_test.cc",
     ],
     deps = [
-        ":box2d",
-        ":line_segment2d",
-        ":math_utils",
-        ":polygon2d",
+        ":geometry",
         "@gtest//:main",
     ],
 )
@@ -496,7 +444,7 @@ cc_test(
         "line_segment2d_test.cc",
     ],
     deps = [
-        ":line_segment2d",
+        ":geometry",
         "@gtest//:main",
     ],
 )

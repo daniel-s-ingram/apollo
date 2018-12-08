@@ -20,7 +20,6 @@
 #include <map>
 #include <memory>
 #include <string>
-#include <unordered_map>
 #include <vector>
 
 #include "gflags/gflags.h"
@@ -61,7 +60,7 @@ class DAGStreaming : public Thread {
 
   size_t CongestionValue() const;
 
-  static Subnode *GetSubnodeByName(std::string name);
+  static Subnode *GetSubnodeByName(const std::string &name);
 
  protected:
   void Run() override;
@@ -81,7 +80,10 @@ class DAGStreaming : public Thread {
   // NOTE(Yangguang Li): Guarantee Sunode should be firstly called destructor.
   // Subnode depends the EventManager and SharedDataManager.
   static SubnodeMap subnode_map_;
-  static std::unordered_map<std::string, SubnodeID> subnode_name_map_;
+
+  // subnode has order, IDs define the initilization order
+  static std::map<std::string, SubnodeID> subnode_name_map_;
+
   DISALLOW_COPY_AND_ASSIGN(DAGStreaming);
 };
 

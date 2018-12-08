@@ -27,8 +27,8 @@ cc_library(
         "//modules/common/filters:digital_filter_coefficients",
         "//modules/common/filters:mean_filter",
         "//modules/common/math:euler_angles_zxy",
+        "//modules/common/math:geometry",
         "//modules/common/math:lqr",
-        "//modules/common/math:math_utils",
         "//modules/common/proto:common_proto",
         "//modules/common/status",
         "//modules/common/time",
@@ -36,7 +36,7 @@ cc_library(
         "//modules/control/common:interpolation_1d",
         "//modules/control/common:trajectory_analyzer",
         "//modules/control/proto:control_proto",
-        "@eigen//:eigen",
+        "@eigen",
     ],
 )
 
@@ -51,6 +51,7 @@ cc_library(
     deps = [
         ":controller_interface",
         "//modules/common:log",
+        "//modules/common/configs:vehicle_config_helper",
         "//modules/common/filters:digital_filter",
         "//modules/common/filters:digital_filter_coefficients",
         "//modules/common/status",
@@ -80,8 +81,8 @@ cc_library(
         "//modules/common/filters:digital_filter_coefficients",
         "//modules/common/filters:mean_filter",
         "//modules/common/math:euler_angles_zxy",
+        "//modules/common/math:geometry",
         "//modules/common/math:lqr",
-        "//modules/common/math:math_utils",
         "//modules/common/proto:common_proto",
         "//modules/common/status",
         "//modules/common/time",
@@ -90,7 +91,7 @@ cc_library(
         "//modules/control/common:interpolation_2d",
         "//modules/control/common:trajectory_analyzer",
         "//modules/control/proto:control_proto",
-        "@eigen//:eigen",
+        "@eigen",
     ],
 )
 
@@ -102,7 +103,7 @@ cc_library(
         ":lat_controller",
         ":lon_controller",
         ":mpc_controller",
-        "@eigen//:eigen",
+        "@eigen",
     ],
 )
 

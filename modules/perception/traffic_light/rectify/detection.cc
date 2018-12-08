@@ -35,12 +35,10 @@ void Detection::Perform(const cv::Mat &ros_image,
   lights->clear();
   // resize
   cv::Mat fw_image;
-  float crop_col_shrink_ = 0.0f;
-  float crop_row_shrink_ = 0.0f;
   float col_shrink = static_cast<float>(resize_len_) / (crop_image.cols);
   float row_shrink = static_cast<float>(resize_len_) / (crop_image.rows);
-  crop_col_shrink_ = std::max(col_shrink, row_shrink);
-  crop_row_shrink_ = crop_col_shrink_;
+  float crop_col_shrink_ = std::max(col_shrink, row_shrink);
+  float crop_row_shrink_ = crop_col_shrink_;
   cv::resize(crop_image, fw_image,
              cv::Size(crop_image.cols * crop_col_shrink_,
                       crop_image.rows * crop_row_shrink_));
@@ -71,7 +69,7 @@ void Detection::Perform(const cv::Mat &ros_image,
   AINFO << "Running detection_: " << elapsed_time << " ms";
 }
 
-void Detection::Init(const int &resize_len, const std::string &refine_net,
+void Detection::Init(const int resize_len, const std::string &refine_net,
                      const std::string &refine_model) {
   refine_net_ptr_.reset(new caffe::Net<float>(refine_net, caffe::TEST));
   refine_net_ptr_->CopyTrainedLayersFrom(refine_model);

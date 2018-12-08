@@ -24,15 +24,16 @@
 #include <cmath>
 #include <limits>
 #include <map>
+#include <memory>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include "Eigen/Geometry"
 #include "opencv2/opencv.hpp"
 #include "yaml-cpp/yaml.h"
 
-#include "modules/common/math/kalman_filter_1d.h"
-#include "modules/perception/lib/config_manager/config_manager.h"
+#include "modules/common/math/kalman_filter.h"
 #include "modules/perception/obstacle/camera/common/visual_object.h"
 #include "modules/perception/obstacle/camera/interface/base_camera_filter.h"
 
@@ -47,8 +48,9 @@ class ObjectCameraFilter : public BaseCameraFilter {
 
   bool Init() override;
 
-  bool Filter(const float &timestamp,
-              std::vector<VisualObjectPtr> *objects) override;
+  bool Filter(const double timestamp,
+              std::vector<std::shared_ptr<VisualObject>>* objects,
+              const FilterOptions& options) override;
 
   std::string Name() const override;
 
@@ -57,36 +59,48 @@ class ObjectCameraFilter : public BaseCameraFilter {
    public:
     int track_id_ = -1;
     int lost_frame_cnt_ = 0;
-    float last_timestamp_ = 0.0f;
+    double last_timestamp_ = 0.0f;
 
-    common::math::KalmanFilter1D x_;
-    common::math::KalmanFilter1D y_;
-    common::math::KalmanFilter1D z_;
-    common::math::KalmanFilter1D alpha_;
-    common::math::KalmanFilter1D theta_;
-    common::math::KalmanFilter1D l_;
-    common::math::KalmanFilter1D w_;
-    common::math::KalmanFilter1D h_;
+    common::math::KalmanFilter<float, 2, 1, 1> x_;
+    common::math::KalmanFilter<float, 2, 1, 1> y_;
+    common::math::KalmanFilter<float, 2, 1, 1> theta_;
+
+    // @brief set offset to avoid huge value float computing
+    Eigen::Vector3d global_to_local_offset_;
   };
 
-  std::map<int, ObjectFilter> tracked_filters_;
-  const int kMaxKeptFrameCnt = 10;
+  void InitFilter(const float x,
+                  common::math::KalmanFilter<float, 2, 1, 1>* filter);
+
+  std::unordered_map<int, ObjectFilter> tracked_filters_;
+  const int kMaxKeptFrameCnt = 5;
 
   // @brief Create filters for new track ids
-  void Create(const int &track_id, const float &timestamp,
-              const VisualObjectPtr &obj_ptr);
+  void Create(const int track_id, const double timestamp,
+              const std::shared_ptr<VisualObject>& obj_ptr,
+              const FilterOptions& options);
 
   // @brief Predict step
-  void Predict(const int &track_id, const float &timestamp);
+  void Predict(const int track_id, const double timestamp);
 
   // @brief Update step
-  void Update(const int &track_id, const VisualObjectPtr &obj_ptr);
+  void Update(const int track_id, const std::shared_ptr<VisualObject>& obj_ptr,
+              const FilterOptions& options);
 
   // @brief Get output of estimated state
-  void GetState(const int &track_id, VisualObjectPtr obj_ptr);
+  void GetState(const int track_id, std::shared_ptr<VisualObject> obj_ptr);
 
   // @brief Destroy old filters
   void Destroy();
+
+  // @brief Transform Pose Global to Local
+  // used by non navigation mode
+  void TransformPoseGlobal2Local(const int track_id, Eigen::Matrix4d* pose);
+
+  // @brief Transform Tracked Object based on pose
+  // used by non navigation mode
+  void TransformObject(std::shared_ptr<VisualObject> obj,
+                       const Eigen::Matrix4f& pose);
 
   DISALLOW_COPY_AND_ASSIGN(ObjectCameraFilter);
 };
